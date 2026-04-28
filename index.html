@@ -1,186 +1,179 @@
-:root {
-  --bg:#07090d; --s1:#0e1117; --s2:#141820; --s3:#1a2030;
-  --bd:rgba(255,255,255,0.06); --bd2:rgba(255,255,255,0.11); --bd3:rgba(255,255,255,0.18);
-  --gold:#c5964a; --gold2:#e8c97a; --gold3:#f5dfa0;
-  --text:#dde2ec; --text2:#8892a4; --text3:#535e72;
-  --red:#e05252; --green:#3dbe7a;
-  --r:10px; --r2:6px;
-}
-*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
-html{scroll-behavior:smooth;}
-body{background:var(--bg);color:var(--text);font-family:'Sora',sans-serif;font-size:14px;min-height:100vh;overflow-x:hidden;}
-body::after{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");pointer-events:none;z-index:0;}
+<!DOCTYPE html>
+<html lang="it">
 
-.app{max-width:1320px;margin:0 auto;padding:28px 20px;position:relative;z-index:1;}
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WarEra · Parlamento Italiano</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Sora:wght@300;400;500;600&display=swap"
+    rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
 
-/* HEADER */
-.header{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;padding-bottom:20px;border-bottom:1px solid var(--bd);flex-wrap:wrap;gap:14px;}
-.header-brand{display:flex;align-items:center;gap:12px;}
-.header-logo{width:42px;height:42px;background:linear-gradient(135deg,rgba(197,150,74,.18),rgba(197,150,74,.35));border:1px solid rgba(197,150,74,.4);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 0 20px rgba(197,150,74,.08);}
-.header-title{font-family:'Playfair Display',serif;font-size:1.55rem;font-weight:700;letter-spacing:-.3px;}
-.header-sub{font-size:.75rem;color:var(--text2);margin-top:1px;letter-spacing:.3px;}
-.header-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
-.input-wrap input{background:var(--s2);border:1px solid var(--bd2);border-radius:var(--r2);color:var(--text);font-family:inherit;font-size:.85rem;padding:8px 12px;width:300px;outline:none;transition:border-color .2s,box-shadow .2s;}
-.input-wrap input::placeholder{color:var(--text3);}
-.input-wrap input:focus{border-color:var(--gold);box-shadow:0 0 0 2px rgba(197,150,74,.12);}
-.badge-status{font-size:.72rem;padding:4px 10px;border-radius:20px;font-weight:600;letter-spacing:.3px;background:rgba(61,190,122,.1);color:var(--green);border:1px solid rgba(61,190,122,.25);transition:.3s;}
-.badge-status.loading{background:rgba(197,150,74,.1);color:var(--gold2);border-color:rgba(197,150,74,.25);}
-.badge-status.error{background:rgba(224,82,82,.1);color:var(--red);border-color:rgba(224,82,82,.25);}
-.btn-load{background:linear-gradient(135deg,var(--gold),var(--gold2));border:none;color:#07090d;padding:8px 18px;border-radius:var(--r2);font-family:inherit;font-size:.85rem;font-weight:700;cursor:pointer;letter-spacing:.2px;transition:opacity .2s,transform .15s,box-shadow .2s;box-shadow:0 2px 12px rgba(197,150,74,.25);}
-.btn-load:hover{opacity:.9;transform:translateY(-1px);box-shadow:0 4px 20px rgba(197,150,74,.35);}
-.btn-load:active{transform:scale(.97);}
+<body>
+  <div class="app">
 
-/* STATS */
-.stats-row{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px;}
-.stat{background:var(--s1);border:1px solid var(--bd);border-radius:var(--r);padding:14px 16px;transition:border-color .2s;}
-.stat:hover{border-color:var(--bd2);}
-.stat.hl{border-color:rgba(197,150,74,.3);}
-.stat-label{font-size:.68rem;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;margin-bottom:5px;}
-.stat-value{font-family:'Playfair Display',serif;font-size:1.55rem;font-weight:700;line-height:1;}
-.stat.hl .stat-value{color:var(--gold2);}
-.stat-sub{font-size:.7rem;color:var(--text2);margin-top:3px;}
+    <!-- HEADER -->
+    <header class="header">
+      <div class="header-brand">
+        <div class="header-logo">🏛️</div>
+        <div>
+          <div class="header-title">Parlamento Italiano</div>
+          <div class="header-sub">WarEra · Dati live da api5.warera.io</div>
+        </div>
+      </div>
+      <div class="header-controls">
+        <div class="input-wrap" style="min-width:200px;">
+          <select id="electionSelect"
+            style="width:100%; padding:8px 12px; background:var(--s2); border:1px solid var(--bd2); border-radius:var(--r2); color:var(--text); font-family:inherit; font-size:.85rem; outline:none;">
+            <option value="">— Scegli un'elezione —</option>
+          </select>
+        </div>
+        <span style="color:var(--text3);font-size:.8rem;">oppure</span>
+        <div class="input-wrap">
+          <input type="text" id="electionIdInput" placeholder="ID Elezione manuale" spellcheck="false">
+        </div>
+        <button class="btn-load" id="loadBtn">▶ Carica</button>
+        <span class="badge-status loading" id="statusBadge">In attesa…</span>
+      </div>
+    </header>
 
-/* PANEL */
-.panel{background:var(--s1);border:1px solid var(--bd);border-radius:var(--r);padding:20px;transition:border-color .2s;animation:fadeIn .3s ease both;}
-.panel:hover{border-color:var(--bd2);}
-.panel-head{display:flex;align-items:center;gap:9px;margin-bottom:16px;padding-bottom:13px;border-bottom:1px solid var(--bd);}
-.panel-icon{width:26px;height:26px;border-radius:5px;background:var(--s2);border:1px solid var(--bd2);display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;}
-.panel-head h2{font-family:'Playfair Display',serif;font-size:.95rem;font-weight:600;}
-.panel-head .badge-count,.badge-count{font-size:.68rem;color:var(--text2);background:var(--s2);border:1px solid var(--bd2);padding:2px 7px;border-radius:20px;white-space:nowrap;}
+    <!-- STATS -->
+    <div class="stats-row">
+      <div class="stat hl">
+        <div class="stat-label">Seggi totali</div>
+        <div class="stat-value" id="stat-seats">—</div>
+        <div class="stat-sub">In parlamento</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Partiti</div>
+        <div class="stat-value" id="stat-parties">—</div>
+        <div class="stat-sub">Rappresentati</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Eletti</div>
+        <div class="stat-value" id="stat-elected">—</div>
+        <div class="stat-sub">Parlamentari</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Maggioranza</div>
+        <div class="stat-value" id="stat-majority">—</div>
+        <div class="stat-sub">Soglia (50%+1)</div>
+      </div>
+      <div class="stat hl">
+        <div class="stat-label">Primo partito</div>
+        <div class="stat-value" id="stat-leader" style="font-size:.9rem;padding-top:7px;">—</div>
+        <div class="stat-sub">Per seggi</div>
+      </div>
+    </div>
 
-/* ═══ PRESIDENTIAL VIEW ═══ */
-#president-view{margin-bottom:16px;}
-.pres-panel{}
+    <!-- ══ VISTA PRESIDENZIALE (solo elezioni presidente) ══ -->
+    <div id="president-view" style="display:none;">
+      <div class="panel pres-panel">
+        <div class="panel-head">
+          <div class="panel-icon">🗳</div>
+          <h2>Elezione Presidenziale</h2>
+          <span class="badge-count" id="pres-status-badge" style="margin-left:auto;"></span>
+        </div>
 
-/* Status badge variants */
-.pres-badge-live{background:rgba(224,82,82,.15)!important;color:#f87171!important;border-color:rgba(224,82,82,.4)!important;}
-.pres-badge-done{background:rgba(59,130,246,.15)!important;color:#60a5fa!important;border-color:rgba(59,130,246,.4)!important;}
-.pres-badge-pending{background:rgba(234,179,8,.15)!important;color:#facc15!important;border-color:rgba(234,179,8,.4)!important;}
+        <!-- Winner banner -->
+        <div id="pres-winner-banner" class="pres-winner" style="display:none;"></div>
 
-/* Winner banner */
-.pres-winner{
-  display:flex;align-items:center;justify-content:space-between;
-  background:linear-gradient(135deg,rgba(197,150,74,.1),rgba(197,150,74,.05));
-  border:1px solid rgba(197,150,74,.3);border-radius:8px;
-  padding:14px 18px;margin-bottom:20px;gap:12px;
-}
-.pres-winner-left{display:flex;align-items:center;gap:12px;}
-.pres-winner-avatar{width:48px;height:48px;border-radius:50%;object-fit:cover;border:2px solid rgba(197,150,74,.5);}
-.pres-winner-initials{display:flex;align-items:center;justify-content:center;font-size:1.2rem;font-weight:700;background:rgba(197,150,74,.2);color:var(--gold2);}
-.pres-winner-label{font-size:.72rem;color:var(--gold);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;}
-.pres-winner-name{font-family:'Playfair Display',serif;font-size:1.2rem;font-weight:700;color:var(--text);}
-.pres-winner-votes{text-align:right;}
-.pres-winner-vcount{font-family:'Playfair Display',serif;font-size:1.6rem;font-weight:700;color:var(--gold2);}
-.pres-winner-vsub{font-size:.72rem;color:var(--text2);}
+        <!-- Candidate race -->
+        <div id="pres-race" class="pres-race"></div>
 
-/* Race bars */
-.pres-race{display:flex;flex-direction:column;gap:10px;margin-bottom:20px;}
-.race-row{
-  display:flex;align-items:center;gap:10px;
-  background:var(--s2);border:1px solid var(--bd);
-  border-radius:8px;padding:10px 12px;
-  transition:border-color .15s;
-}
-.race-row:hover{border-color:var(--bd2);}
-.race-row.race-winner{border-color:rgba(197,150,74,.35);background:linear-gradient(135deg,rgba(197,150,74,.07),var(--s2));}
-.race-rank{font-size:.8rem;font-weight:700;color:var(--text3);min-width:18px;text-align:center;}
-.race-row.race-winner .race-rank{color:var(--gold);}
-.race-avatar{width:34px;height:34px;border-radius:50%;object-fit:cover;border:1px solid var(--bd2);flex-shrink:0;}
-.race-initials{display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:700;}
-.race-info{flex:1;min-width:0;}
-.race-name{font-size:.85rem;font-weight:500;margin-bottom:5px;display:flex;align-items:center;gap:6px;}
-.race-win-chip{font-size:.65rem;background:rgba(197,150,74,.2);color:var(--gold2);border:1px solid rgba(197,150,74,.35);border-radius:4px;padding:1px 6px;font-weight:600;}
-.race-bar-wrap{height:5px;background:var(--s3);border-radius:3px;overflow:hidden;}
-.race-bar{height:100%;border-radius:3px;transition:width .6s ease;}
-.race-stats{text-align:right;flex-shrink:0;}
-.race-votes{font-size:.85rem;font-weight:600;color:var(--text);}
-.race-pct{font-size:.72rem;color:var(--text2);}
+        <!-- Chart -->
+        <div class="pres-chart-wrap">
+          <canvas id="presidentChart" role="img" aria-label="Voti elezione presidenziale"></canvas>
+        </div>
 
-/* Pres chart */
-.pres-chart-wrap{position:relative;height:200px;margin-bottom:16px;}
+        <!-- Meta info -->
+        <div id="pres-meta" class="pres-meta"></div>
+      </div>
+    </div>
 
-/* Pres meta */
-.pres-meta{display:flex;flex-wrap:wrap;gap:12px 24px;font-size:.78rem;color:var(--text2);padding-top:12px;border-top:1px solid var(--bd);}
-.pres-meta strong{color:var(--text);}
-.pres-meta-link{color:var(--gold);text-decoration:none;margin-left:auto;}
-.pres-meta-link:hover{color:var(--gold2);}
+    <!-- ══ VISTA PARLAMENTARE (solo elezioni congressuali) ══ -->
+    <div id="congress-view" style="display:none;">
 
-/* ═══ CONGRESS VIEW ═══ */
-.main-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:16px;margin-bottom:16px;}
+      <!-- Main grid -->
+      <div class="main-grid">
+        <div class="panel">
+          <div class="panel-head">
+            <div class="panel-icon">🏛</div>
+            <h2>Composizione Parlamento</h2>
+            <span class="badge-count" id="badgeCount">—</span>
+          </div>
+          <div id="parliamentContainer" class="parliament-wrap"></div>
+          <div id="legendContainer" class="parl-legend"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <div class="panel-icon">📋</div>
+            <h2>Dettaglio Parlamento</h2>
+          </div>
+          <table class="party-table">
+            <thead>
+              <tr>
+                <th>Partito</th>
+                <th style="width:140px">Seggi</th>
+                <th>Iscritti</th>
+                <th>Voti</th> 
+                <th>% seggi</th>
+                <th>Leader</th>
+              </tr>
+            </thead>
+            <tbody id="partyTableBody">
+              <tr>
+                <td colspan="5" class="empty">Nessun dato. Premi Carica.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-/* Parliament */
-.parliament-wrap{position:relative;width:100%;overflow:visible;}
-.parliament-wrap svg{display:block;width:100%;height:auto;}
-.parl-legend{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:14px;padding-top:12px;border-top:1px solid var(--bd);}
-.leg-item{display:flex;align-items:center;gap:5px;font-size:.75rem;color:var(--text2);cursor:default;transition:color .15s;line-height:1;}
-.leg-item:hover{color:var(--text);}
-.leg-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
-.leg-seats{background:var(--s2);color:var(--text3);padding:1px 5px;border-radius:3px;font-size:.68rem;}
+      <!-- Charts -->
+      <div class="charts-row" style="margin-top:16px;">
+        <div class="panel">
+          <div class="panel-head">
+            <div class="panel-icon">🥧</div>
+            <h2>Distribuzione Seggi</h2>
+          </div>
+          <div class="chart-inner"><canvas id="seatsChart" role="img"></canvas></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <div class="panel-icon">📊</div>
+            <h2>Iscritti per Partito — Parlamento</h2>
+          </div>
+          <div class="chart-inner"><canvas id="membersChart" role="img"></canvas></div>
+        </div>
+      </div>
 
-/* Party table */
-.party-table{width:100%;border-collapse:collapse;}
-.party-table thead tr{border-bottom:1px solid var(--bd2);}
-.party-table th{text-align:left;color:var(--text3);font-size:.68rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;padding:0 8px 10px;}
-.party-table td{padding:8px;border-bottom:1px solid var(--bd);font-size:.82rem;color:var(--text);vertical-align:middle;}
-.party-table tbody tr{transition:background .15s;}
-.party-table tbody tr:hover td{background:var(--s2);}
-.party-table tbody tr:last-child td{border-bottom:none;}
-.party-color-bar{display:inline-block;width:3px;height:18px;border-radius:3px;margin-right:6px;vertical-align:middle;}
-.party-name-cell{display:flex;align-items:center;}
-.party-pct{font-size:.7rem;color:var(--text3);}
-.seats-bar-wrap{display:flex;align-items:center;gap:7px;}
-.seats-bar{flex:1;height:4px;background:var(--s3);border-radius:2px;overflow:hidden;}
-.seats-bar-fill{height:100%;border-radius:2px;transition:width .4s ease;}
-.seats-num{font-size:.8rem;font-weight:600;min-width:22px;text-align:right;}
-.leader-chip{display:inline-flex;align-items:center;gap:4px;background:var(--s2);border:1px solid var(--bd);border-radius:4px;padding:2px 7px;font-size:.72rem;color:var(--text2);}
+      <!-- All parties -->
+      <div class="single-chart-row" style="margin-top:16px;">
+        <div class="panel all-parties-panel">
+          <div class="panel-head">
+            <div class="panel-icon">📊</div>
+            <h2>Tutti i partiti per membri</h2>
+            <span class="badge-count" id="badgeAllParties">—</span>
+          </div>
+          <div class="chart-inner">
+            <canvas id="allPartiesChart" role="img"></canvas>
+          </div>
+        </div>
+      </div>
 
-/* Charts */
-.charts-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
-.chart-inner{position:relative;height:220px;margin-top:8px;}
-.single-chart-row{display:grid;grid-template-columns:1fr;gap:16px;}
-.all-parties-panel .chart-inner{height:320px;}
+    </div><!-- /congress-view -->
 
-/* Tooltip */
-.tooltip{position:fixed;background:#0f1521;border:1px solid rgba(197,150,74,.35);padding:9px 13px;border-radius:7px;font-size:.78rem;color:var(--text);pointer-events:none;z-index:9999;opacity:0;transition:opacity .12s;white-space:nowrap;box-shadow:0 8px 24px rgba(0,0,0,.5);backdrop-filter:blur(8px);}
-.tooltip .tt-party{color:var(--gold2);font-weight:600;margin-bottom:2px;}
-.tooltip .tt-user{color:var(--text);}
-.tooltip .tt-seat{color:var(--text2);font-size:.7rem;margin-top:1px;}
+  </div><!-- /app -->
 
-/* Avatars */
-.tooltip-avatar{width:16px;height:16px;border-radius:50%;vertical-align:middle;margin-right:4px;border:1px solid rgba(255,255,255,.2);}
-.avatar-small{width:18px;height:18px;border-radius:50%;vertical-align:middle;margin-right:4px;border:1px solid rgba(255,255,255,.2);}
-.avatar-placeholder{font-size:14px;margin-right:4px;}
-.leader-link{color:var(--text2);text-decoration:none;display:inline-flex;align-items:center;gap:4px;transition:color .15s;}
-.leader-link:hover{color:var(--gold);}
+  <div class="tooltip" id="tooltip"></div>
+  <script src="parliament.js"></script>
+  <script src="app.js"></script>
+</body>
 
-/* Seat dots */
-.seat-dot{cursor:pointer;transition:filter .15s;}
-.seat-dot:hover{filter:brightness(1.5) drop-shadow(0 0 4px currentColor);}
-.seat-group{cursor:pointer;}
-.seat-group:hover circle:first-of-type{filter:brightness(1.3);}
-
-/* Misc */
-.empty{color:var(--text3);font-size:.85rem;padding:6px 0;}
-::-webkit-scrollbar{width:5px;}
-::-webkit-scrollbar-track{background:var(--s1);}
-::-webkit-scrollbar-thumb{background:var(--s3);border-radius:3px;}
-@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-
-/* RESPONSIVE */
-@media(max-width:900px){
-  .main-grid{grid-template-columns:1fr;}
-  .stats-row{grid-template-columns:repeat(3,1fr);}
-  .charts-row{grid-template-columns:1fr;}
-  .input-wrap input{width:200px;}
-  .header{flex-direction:column;align-items:flex-start;}
-  .header-controls{width:100%;}
-  .pres-winner{flex-direction:column;align-items:flex-start;}
-  .pres-winner-votes{text-align:left;}
-}
-@media(max-width:600px){
-  .stats-row{grid-template-columns:1fr 1fr;}
-  .header-controls{flex-wrap:wrap;}
-  .btn-load,.input-wrap,.input-wrap input{width:100%;}
-  .party-table{font-size:.75rem;}
-  .party-table th,.party-table td{padding:6px 4px;}
-}
+</html>
