@@ -22,12 +22,9 @@ let _pendingRequest = null;
 async function trpcPost(base, proc, input, signal) {
   const res = await fetch(`${base}/${proc}?batch=1`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(_apiKey && { Authorization: `Bearer ${_apiKey}` }),
-    },
+    headers: { 'Content-Type':'application/json', ...(_apiKey && { Authorization:`Bearer ${_apiKey}` }) },
     body: JSON.stringify({ 0: input }),
-    signal,  // ← aggiunto
+    signal,
   });
   if (!res.ok) throw new Error(`HTTP ${res.status} → ${proc}`);
   const j = await res.json();
@@ -80,10 +77,8 @@ async function loadElectionsHistory() {
     const items = data?.items || data?.results || [];
     const select = document.getElementById('electionSelect');
     
-    // Pulisci opzioni tranne la prima
     while (select.options.length > 1) select.remove(1);
     
-    // Ordina per data decrescente
     items.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
     
     items.forEach(election => {
@@ -95,14 +90,10 @@ async function loadElectionsHistory() {
       select.appendChild(opt);
     });
 
-    // Seleziona automaticamente la prima elezione (la più recente)
     if (items.length > 0) {
       const latestElection = items[0];
-      // Imposta il dropdown
       select.value = latestElection._id;
-      // Aggiorna anche l'input manuale
       document.getElementById('electionIdInput').value = latestElection._id;
-      // Carica i dati
       await loadElection(latestElection._id);
     }
   } catch (err) {
@@ -110,7 +101,7 @@ async function loadElectionsHistory() {
   }
 }
 
-/* ── CONGRESS: party table + charts ── */
+/* ── CONGRESS: party table ── */
 function renderPartyTable(electedParties, totalSeats) {
   const sorted = [...electedParties].sort((a,b) => b.seats - a.seats);
   document.getElementById('partyTableBody').innerHTML = sorted.map(p => {
@@ -126,12 +117,14 @@ function renderPartyTable(electedParties, totalSeats) {
       <td><div class="party-name-cell"><span class="party-color-bar" style="background:${p.color}"></span><span>${p.name}</span></div></td>
       <td><div class="seats-bar-wrap"><div class="seats-bar"><div class="seats-bar-fill" style="width:${barW}%;background:${p.color}"></div></div><span class="seats-num">${p.seats}</span></div></td>
       <td>${p.members}</td>
+      <td>${p.votes.toLocaleString()}</td>
       <td><span class="party-pct">${pct}%</span></td>
       <td>${leaderEl}</td>
     </tr>`;
   }).join('');
 }
 
+/* ── CONGRESS: half-donut + bar charts ── */
 function renderCharts(electedParties) {
   safeDestroy('seatsChart');
   safeDestroy('membersChart');
@@ -142,54 +135,26 @@ function renderCharts(electedParties) {
   const tt = { backgroundColor:'#0f1521', borderColor:'rgba(197,150,74,.3)', borderWidth:1,
     titleColor:'#e8c97a', bodyColor:'#8892a4', padding:10, cornerRadius:6 };
 
-// Nuova configurazione per il grafico a mezza torta
-_seatsChart = new Chart(document.getElementById('seatsChart').getContext('2d'), {
+  _seatsChart = new Chart(document.getElementById('seatsChart').getContext('2d'), {
     type: 'doughnut',
-    data: {
-      labels: electedParties.map(p => p.name),
-      datasets: [{
-        data: electedParties.map(p => p.seats),
-        backgroundColor: colorsA,
-        borderColor: '#0e1117',
-        borderWidth: 3,
-        hoverBorderColor: colors,
-        hoverBorderWidth: 2,
-      }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      cutout: '65%',               // Manteniamo l'effetto "ciambella"
-      rotation: -90,              // Inizia da sinistra (-180°)
-      circumference: 180,          // Disegna solo 180° (metà torta)
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: '#0f1521',
-          borderColor: 'rgba(197,150,74,.3)',
-          borderWidth: 1,
-          titleColor: '#e8c97a',
-          bodyColor: '#8892a4',
-          padding: 10,
-          cornerRadius: 6,
-          callbacks: {
-            title: (items) => items[0].label,
-            label: (item) => {
-              const total = electedParties.reduce((s, p) => s + p.seats, 0);
-              const v = Number(item.raw);
-              return ` ${v} seggi (${((v / total) * 100).toFixed(1)}%)`;
-            }
-          }
+    data: { labels: electedParties.map(p=>p.name), datasets: [{
+      data: electedParties.map(p=>p.seats), backgroundColor:colorsA,
+      borderColor:'#0e1117', borderWidth:3, hoverBorderColor:colors, hoverBorderWidth:2,
+    }]},
+    options: { responsive:true, maintainAspectRatio:false, cutout:'65%',
+      rotation: -90, circumference: 180,
+      plugins: { legend:{display:false}, tooltip:{ ...tt, callbacks:{
+        title: i => i[0].label,
+        label: i => {
+          const t = electedParties.reduce((s,p)=>s+p.seats,0);
+          const party = electedParties[i.dataIndex];
+          return ` ${i.raw} seggi (${((i.raw/t)*100).toFixed(1)}%) · ${party.votes.toLocaleString()} voti`;
         }
-      },
-      onClick: (event, elements) => {
-        if (elements.length > 0) {
-          const i = elements[0].index;
-          window.open(`${APP_BASE}/party/${electedParties[i].id}`, '_blank');
-        }
-      }
+      }}},
+      
+      onClick: (_,el) => { if(el.length) window.open(`${APP_BASE}/party/${electedParties[el[0].index].id}`,'_blank'); }
     },
-});
+  });
 
   _membersChart = new Chart(document.getElementById('membersChart').getContext('2d'), {
     type:'bar',
@@ -211,6 +176,7 @@ _seatsChart = new Chart(document.getElementById('seatsChart').getContext('2d'), 
   });
 }
 
+/* ── CONGRESS: all-parties chart ── */
 function renderAllPartiesChart(allParties) {
   safeDestroy('allPartiesChart');
   if (!allParties.length) return;
@@ -388,6 +354,16 @@ async function loadCongressElection(election) {
   });
   const electedPartyIds = Object.keys(partySeatsMap);
 
+  // ── Voti per partito (somma di tutti i candidati, eletti e non) ──
+  const partyVotesMap = {};
+  election.candidates.forEach(c => {
+    const pid = String(c.party || c.partyId || 'independent');
+    const votes = election.votes
+      ? (election.votes[String(c.userId || c.user)] || c.voteCount || 0)
+      : (c.voteCount || 0);
+    partyVotesMap[pid] = (partyVotesMap[pid] || 0) + votes;
+  });
+
   setStatus(`Recupero ${electedPartyIds.length} partiti eletti…`, 'loading');
 
   const electedDetailsMap = {};
@@ -406,6 +382,26 @@ async function loadCongressElection(election) {
   const userMap = await fetchUsersSequential([...allUserIds]);
 
   const electedParties = electedPartyIds.map((pid, idx) => {
+    if (pid === 'independent') {
+      return {
+        id: pid,
+        name: 'Indipendente',
+        abbr: 'IND',
+        seats: partySeatsMap[pid],
+        members: 0,
+        votes: partyVotesMap[pid] || 0,
+        leaderName: null,
+        leaderAvatarUrl: null,
+        leaderId: null,
+        color: '#6b7280',
+        users: (partyUsersMap[pid] || []).map(uid => ({
+          userId: uid,
+          username: userMap[uid]?.username || `#${uid.slice(-6)}`,
+          avatarUrl: userMap[uid]?.avatarUrl || null,
+        })),
+      };
+    }
+
     const pd       = electedDetailsMap[pid];
     const seats    = partySeatsMap[pid];
     const leaderId = pd.leader ? String(pd.leader) : null;
@@ -418,17 +414,19 @@ async function loadCongressElection(election) {
     }));
     return {
       id: pid,
-      name:    pd.name || `Partito ${pid.slice(-6)}`,
-      abbr:    pd.abbreviation || pd.abbr || (pd.name || 'P').substring(0, 3).toUpperCase(),
+      name:    pd.name || (pid === 'independent' ? 'Indipendente' : `Partito ${pid.slice(-6)}`),
+      abbr:    pd.abbreviation || pd.abbr || (pd.name || (pid === 'independent' ? 'IND' : 'P')).substring(0, 3).toUpperCase(),
       seats, members: rawMembers,
+      votes: partyVotesMap[pid] || 0,
       leaderName: leaderData?.username || null,
       leaderAvatarUrl: leaderData?.avatarUrl || null,
       leaderId,
-      color: pd._color,
+      color: pd._color || '#6b7280',
       users,
     };
   }).sort((a, b) => b.seats - a.seats);
 
+  // ── allParties ──
   const allPartyDetailsMap = { ...electedDetailsMap };
   const missingIds = ALL_PARTY_IDS.filter(pid => !allPartyDetailsMap[pid]);
   if (missingIds.length) {
@@ -449,13 +447,15 @@ async function loadCongressElection(election) {
     const rawMembers = Array.isArray(pd.members) ? pd.members.length : Number(pd.membersCount || pd.memberCount || 0);
     return {
       id: pid,
-      name:    pd.name || `Partito ${pid.slice(-6)}`,
-      abbr:    pd.abbreviation || pd.abbr || (pd.name || 'P').substring(0, 3).toUpperCase(),
+      name:    pd.name || (pid === 'independent' ? 'Indipendente' : `Partito ${pid.slice(-6)}`),
+      abbr:    pd.abbreviation || pd.abbr || (pd.name || (pid === 'independent' ? 'IND' : 'P')).substring(0, 3).toUpperCase(),
       seats:   partySeatsMap[pid] || 0,
       members: rawMembers,
+      votes:   partyVotesMap[pid] || 0,
       color:   pd._color || PALETTE[0],
     };
   }).sort((a, b) => b.seats - a.seats || b.members - a.members);
+
   const totalSeats     = electedParties.reduce((s,p) => s+p.seats, 0);
   const majority       = Math.floor(totalSeats/2)+1;
 
@@ -484,27 +484,24 @@ async function loadCongressElection(election) {
 }
 
 /* ══════════════════════════════════════════════
-   MAIN ENTRY
+   MAIN ENTRY (con debounce)
 ══════════════════════════════════════════════ */
 async function loadElection(id) {
   const electionId = id || document.getElementById('electionIdInput').value.trim();
   if (!electionId) { setStatus('Inserisci un ID elezione','error'); return; }
 
-  // Cancella una richiesta precedente se ancora in attesa
   if (_pendingRequest) {
     clearTimeout(_pendingRequest.timeout);
     if (_pendingRequest.controller) _pendingRequest.controller.abort();
   }
 
-  // Disabilita temporaneamente i controlli per evitare richieste duplicate
   const selectEl = document.getElementById('electionSelect');
-  const inputEl = document.getElementById('electionIdInput');
-  const btnEl   = document.getElementById('loadBtn');
+  const inputEl  = document.getElementById('electionIdInput');
+  const btnEl    = document.getElementById('loadBtn');
   selectEl.disabled = true;
   inputEl.disabled  = true;
   btnEl.disabled    = true;
 
-  // Debounce: aspetta 300ms prima di eseguire la richiesta
   _pendingRequest = {};
   _pendingRequest.timeout = setTimeout(async () => {
     _pendingRequest = null;
@@ -534,7 +531,6 @@ async function loadElection(id) {
         setStatus('Errore: '+err.message,'error');
       }
     } finally {
-      // Riabilita i controlli
       selectEl.disabled = false;
       inputEl.disabled  = false;
       btnEl.disabled    = false;
@@ -544,16 +540,13 @@ async function loadElection(id) {
 
 /* ── BOOT ── */
 document.addEventListener('DOMContentLoaded', () => {
-  // Carica lo storico elezioni e automaticamente l'ultima
   loadElectionsHistory();
 
-  // Event listeners
   document.getElementById('loadBtn').addEventListener('click', () => loadElection());
   document.getElementById('electionIdInput').addEventListener('keydown', e => {
     if (e.key === 'Enter') loadElection();
   });
 
-  // Carica automaticamente l'elezione selezionata dal dropdown
   document.getElementById('electionSelect').addEventListener('change', function() {
     if (this.value) {
       document.getElementById('electionIdInput').value = this.value;
