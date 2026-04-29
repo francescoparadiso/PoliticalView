@@ -229,6 +229,91 @@ body::after{content:'';position:fixed;inset:0;background-image:url("data:image/s
 ::-webkit-scrollbar{width:5px;}
 ::-webkit-scrollbar-track{background:var(--s1);}
 ::-webkit-scrollbar-thumb{background:var(--s3);border-radius:3px;}
+
+/* ── TOM SELECT CUSTOMIZATION ── */
+/* Contenitore principale */
+.ts-wrapper {
+  min-width: 230px;
+}
+
+/* Il campo di input/ricerca */
+.ts-wrapper .ts-control {
+  background: var(--s2) !important;
+  border: 1px solid var(--bd2) !important;
+  border-radius: var(--r2) !important;
+  color: var(--text) !important;
+  font-family: 'Sora', sans-serif !important;
+  font-size: .85rem !important;
+  padding: 8px 28px 8px 12px !important;
+  min-height: 38px;
+  box-shadow: none !important;
+  transition: border-color .2s, box-shadow .2s;
+}
+
+.ts-wrapper .ts-control input {
+  color: var(--text) !important;
+  font-family: 'Sora', sans-serif !important;
+  font-size: .85rem !important;
+}
+
+.ts-wrapper .ts-control input::placeholder {
+  color: var(--text3);
+}
+
+/* Quando il menu è aperto */
+.ts-wrapper.focus .ts-control {
+  border-color: var(--gold) !important;
+  box-shadow: 0 0 0 2px rgba(197,150,74,.12) !important;
+}
+
+/* Il dropdown */
+.ts-wrapper .ts-dropdown {
+  background: var(--s1) !important;
+  border: 1px solid var(--bd2) !important;
+  border-radius: var(--r2) !important;
+  color: var(--text) !important;
+  margin-top: 4px !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,.5) !important;
+}
+
+/* Le opzioni nel dropdown */
+.ts-wrapper .ts-dropdown .option {
+  padding: 8px 12px !important;
+  font-size: .85rem !important;
+  color: var(--text2) !important;
+  transition: background .15s, color .15s;
+}
+
+.ts-wrapper .ts-dropdown .option.active {
+  background: var(--s3) !important;
+  color: var(--text) !important;
+}
+
+.ts-wrapper .ts-dropdown .option:hover {
+  background: var(--s2) !important;
+  color: var(--gold2) !important;
+}
+
+/* La freccia del select */
+.ts-wrapper .ts-control .ts-dropdown-arrow {
+  border-top-color: var(--text3) !important;
+}
+
+/* Opzione selezionata (quando si usa multi‑select, non nel nostro caso) */
+.ts-wrapper .item {
+  background: var(--s3) !important;
+  border: 1px solid var(--bd2) !important;
+  border-radius: 4px !important;
+  color: var(--text) !important;
+}
+
+/* Testo quando non c'è selezione */
+.ts-wrapper .ts-control .placeholder {
+  color: var(--text3) !important;
+  font-family: 'Sora', sans-serif !important;
+  font-size: .85rem !important;
+}
+
 @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
 

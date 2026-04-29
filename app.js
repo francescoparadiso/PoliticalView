@@ -1,10 +1,5 @@
-const API2 = 'https://api2.warera.io/trpc';
-const API5 = 'https://api5.warera.io/trpc';
+const API_BASE = 'http://37.77.140.194:3000/api';
 const APP_BASE = 'https://app.warera.io';
-
-/* ── CACHE MAPS ── */
-const _partyCache = new Map();
-const _userCache = new Map();
 
 const PALETTE = [
   '#3b82f6', '#22c55e', '#eab308', '#ef4444', '#a855f7',
@@ -43,30 +38,9 @@ let _seatsChart, _membersChart, _allPartiesChart, _presidentChart, _timelineChar
 let _apiKey = sessionStorage.getItem('we_key') || '';
 let _pendingRequest = null;
 let _electionHistory = [];
-let _currentCongressElectionId = null;   // ID elezione congressuale attualmente visualizzata
-let _timelineElectionIds = [];           // ID elezioni nella timeline (per risalire all'indice)
-/* ── RATE LIMITER ── */
-let _rateQueue = [];
-let _rateRunning = 0;
-const MAX_CONCURRENT = 3;
-const BATCH_DELAY = 150;
-
-async function rateLimited(fn) {
-  return new Promise((resolve, reject) => {
-    _rateQueue.push({ fn, resolve, reject });
-    _processQueue();
-  });
-}
-
-function _processQueue() {
-  if (_rateRunning >= MAX_CONCURRENT || _rateQueue.length === 0) return;
-  const { fn, resolve, reject } = _rateQueue.shift();
-  _rateRunning++;
-  fn()
-    .then(res => { _rateRunning--; resolve(res); _processQueue(); })
-    .catch(err => { _rateRunning--; reject(err); _processQueue(); });
-  setTimeout(_processQueue, BATCH_DELAY);
-}
+let _currentCongressElectionId = null;
+let _timelineElectionIds = [];
+let _currentCountryId = '6813b6d446e731854c7ac7a2';
 
 /* ── ABBR INTELLIGENTE ── */
 function makeAbbr(name) {
@@ -80,75 +54,14 @@ function makeAbbr(name) {
   return src[0].substring(0, 3).toUpperCase();
 }
 
-/* ── API (passano attraverso rate limiter) ── */
-async function trpcPost(base, proc, input, signal) {
-  const res = await fetch(`${base}/${proc}?batch=1`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(_apiKey && { Authorization: `Bearer ${_apiKey}` }) },
-    body: JSON.stringify({ 0: input }),
-    signal,
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status} → ${proc}`);
-  const j = await res.json();
-  if (Array.isArray(j)) { const d = j[0]?.result?.data; return d !== undefined ? d : j[0]?.result ?? j[0]; }
-  return j?.result?.data ?? j;
-}
-
-async function trpcGet(base, proc, input) {
-  const res = await fetch(`${base}/${proc}?input=${encodeURIComponent(JSON.stringify(input))}`, {
-    headers: _apiKey ? { Authorization: `Bearer ${_apiKey}` } : {},
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status} → ${proc}`);
-  const j = await res.json();
-  if (Array.isArray(j)) return j[0]?.result?.data;
-  return j?.result?.data ?? j;
-}
-
-/* ── FUNZIONI DI SUPPORTO PER LE CHIAMATE API ── */
-async function fetchUsersSequential(userIds) {
-  const map = {};
-  const unique = [...new Set(userIds.map(String))];
-  for (let i = 0; i < unique.length; i += 3) {
-    const chunk = unique.slice(i, i + 3);
-    await Promise.all(chunk.map(uid =>
-      rateLimited(() => trpcGet(API2, 'user.getUserLite', { userId: uid }))
-        .then(u => { map[uid] = { username: u?.username || `#${uid.slice(-6)}`, avatarUrl: u?.avatarUrl || null }; })
-        .catch(() => { map[uid] = { username: `#${uid.slice(-6)}`, avatarUrl: null }; })
-    ));
-  }
-  return map;
-}
-
-async function loadPartyColors(csvUrl) {
-  try {
-    const res = await fetch(csvUrl);
-    if (!res.ok) throw new Error('CSV non trovato');
-    const text = await res.text();
-    text.split('\n').forEach(line => {
-      line = line.trim();
-      if (!line || line.startsWith('#')) return;
-      const parts = line.split(',').map(s => s.trim()).filter(Boolean);
-      if (parts.length >= 2) {
-        const id = parts[0];
-        const color = parts[parts.length - 1];
-        if (id && color) _partyColorMap.set(id, color);
-      }
-    });
-  } catch (err) {
-    console.warn('CSV colori non caricato:', err.message);
-  }
-}
-
-async function preloadPartyNames() {
-  const ids = [..._partyColorMap.keys()];
-  if (!ids.length) return;
-  setStatus('Caricamento partiti…', 'loading');
-  await Promise.all(ids.map(pid =>
-    rateLimited(() => trpcPost(API2, 'party.getById', { partyId: pid }))
-      .then(p => { if (p) _partyNamesMap.set(pid, p.name); })
-      .catch(() => { })
-  ));
-  setStatus('', '');
+/* ── FETCH VERSO IL SERVER LOCALE ── */
+async function localFetch(path, params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  const url = `${API_BASE}${path}${qs ? '?' + qs : ''}`;
+  const headers = _apiKey ? { Authorization: `Bearer ${_apiKey}` } : {};
+  const res = await fetch(url, { headers });
+  if (!res.ok) throw new Error(`HTTP ${res.status} → ${path}`);
+  return await res.json();
 }
 
 /* ── HELPERS ── */
@@ -215,55 +128,74 @@ function hideSkeleton() {
   if (apCanvas) apCanvas.style.display = '';
 }
 
-function getCachedOrFetch(key, fetcher, ttlMs = 30 * 60 * 1000) {
-  const cached = localStorage.getItem(key);
-  if (cached) {
-    try {
-      const { data, ts } = JSON.parse(cached);
-      if (Date.now() - ts < ttlMs) {
-        return Promise.resolve(data);
-      }
-    } catch (_) { }
+/* ── CARICAMENTO NAZIONI (fallback Italia) ── */
+async function loadCountries() {
+  const select = document.getElementById('countrySelect');
+  if (!select) return;
+
+  // Inizializza Tom Select (distrugge eventuale istanza precedente)
+  if (select.tomselect) {
+    select.tomselect.destroy();
   }
-  return fetcher().then(data => {
-    localStorage.setItem(key, JSON.stringify({ data, ts: Date.now() }));
-    return data;
+
+  // Configura Tom Select con ricerca
+  const tomSelect = new TomSelect(select, {
+    placeholder: 'Search country…',
+    allowEmptyOption: true,
+    create: false,
+    sortField: { field: 'text', direction: 'asc' },
+    maxOptions: null,
+    // Questa opzione fa sì che l'utente possa digitare per filtrare
+    shouldSort: true,
   });
-}
 
-async function getPartyDetails(partyId) {
-  if (_partyCache.has(partyId)) return _partyCache.get(partyId);
   try {
-    const p = await rateLimited(() => trpcPost(API2, 'party.getById', { partyId }));
-    _partyCache.set(partyId, p);
-    _partyNamesMap.set(partyId, p.name);
-    return p;
-  } catch (_) {
-    const fallback = { name: `Partito ${partyId.slice(-6)}`, members: [] };
-    _partyCache.set(partyId, fallback);
-    return fallback;
-  }
-}
+    const data = await localFetch('/countries');
+    const items = data?.items || [];
 
-async function getUserCached(uid) {
-  const id = String(uid);
-  if (_userCache.has(id)) return _userCache.get(id);
-  const entry = await rateLimited(() => trpcGet(API2, 'user.getUserLite', { userId: id }))
-    .then(u => ({ username: u?.username || `#${id.slice(-6)}`, avatarUrl: u?.avatarUrl || null }))
-    .catch(() => ({ username: `#${id.slice(-6)}`, avatarUrl: null }));
-  _userCache.set(id, entry);
-  return entry;
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new Error('No countries found');
+    }
+
+    // Ordina alfabeticamente e popola Tom Select
+    items.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+    items.forEach(c => {
+      tomSelect.addOption({
+        value: c._id,
+        text: c.name || c._id,
+      });
+    });
+
+    // Seleziona l'Italia se presente, altrimenti la prima opzione
+    const italyOption = tomSelect.options['6813b6d446e731854c7ac7a2'];
+    if (italyOption) {
+      tomSelect.setValue('6813b6d446e731854c7ac7a2');
+    } else {
+      tomSelect.setValue(Object.keys(tomSelect.options)[0] || '');
+    }
+
+    // Salva l'istanza Tom Select per poterla usare dopo
+    select.tomselect = tomSelect;
+
+  } catch (err) {
+    console.warn('⚠️ Unable to load countries:', err.message);
+
+    // Fallback: inserisci solo l'Italia
+    tomSelect.addOption({
+      value: '6813b6d446e731854c7ac7a2',
+      text: 'Italy',
+    });
+    tomSelect.setValue('6813b6d446e731854c7ac7a2');
+    select.tomselect = tomSelect;
+  }
 }
 
 /* ── STORICO ELEZIONI + TIMELINE ── */
 async function loadElectionsHistory() {
   try {
-    const items = await getCachedOrFetch('electionsHistory', () =>
-      trpcGet(API5, 'election.getElections', { countryId: '6813b6d446e731854c7ac7a2' })
-    ).then(data => {
-      const raw = data?.items || data?.results || [];
-      return raw.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-    });
+    const data = await localFetch('/elections', { countryId: _currentCountryId });
+    const items = (data?.items || []).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
     _electionHistory = items;
 
     const select = document.getElementById('electionSelect');
@@ -278,9 +210,8 @@ async function loadElectionsHistory() {
     });
 
     const congressElections = items.filter(e => e.type === 'congress');
-    // Imposta l'ID dell'ultima elezione come corrente (per i punti evidenziati)
     _currentCongressElectionId = congressElections.length > 0 ? congressElections[congressElections.length - 1]._id : null;
-    renderTimeline(congressElections.slice(-6)); // Solo le ultime 6 per la timeline
+    renderTimeline(congressElections.slice(-6));
 
     if (items.length > 0) {
       const latest = [...items].reverse()[0];
@@ -293,7 +224,7 @@ async function loadElectionsHistory() {
   }
 }
 
-/* ── TIMELINE CHART ── */
+/* ── TIMELINE ── */
 function renderTimeline(congressElections) {
   if (congressElections.length < 2) return;
 
@@ -305,7 +236,8 @@ function renderTimeline(congressElections) {
   const electionIds = congressElections.map(e => e._id);
   const canvas = document.getElementById('timelineChart');
   const ctx = canvas.getContext('2d');
-  _timelineElectionIds = electionIds;   // ← salva per uso successivo
+  _timelineElectionIds = electionIds;
+
   _timelineChart = new Chart(ctx, {
     type: 'line',
     data: { labels, datasets: [] },
@@ -326,7 +258,6 @@ function renderTimeline(congressElections) {
           callbacks: {
             title: items => `Elezione ${items[0].label}`,
             label: (item) => {
-              // Nasconde la media mobile (dataset senza label)
               if (!item.dataset.label) return '';
               return ` ${item.dataset.label}: ${item.parsed.y} seggi`;
             }
@@ -359,7 +290,6 @@ function renderTimeline(congressElections) {
     },
   });
 
-  // Carica i dati della timeline in background con rate limiting
   loadTimelineData(congressElections, electionIds);
 }
 
@@ -368,7 +298,7 @@ async function loadTimelineData(elections, electionIds) {
 
   for (const election of elections) {
     try {
-      const data = await rateLimited(() => trpcPost(API5, 'election.getElection', { electionId: election._id }));
+      const data = await localFetch('/election', { id: election._id });
       const elected = (data?.candidates || []).filter(c => c.isElected);
       const seatMap = {};
       elected.forEach(c => {
@@ -384,25 +314,36 @@ async function loadTimelineData(elections, electionIds) {
   const allPids = new Set();
   partySeatsPerElection.forEach(m => Object.keys(m).forEach(pid => allPids.add(pid)));
 
+  // ---- NUOVO: precarica i nomi dei partiti se mancano ----
+  for (const pid of allPids) {
+    if (pid === 'independent') continue;
+    if (!_partyNamesMap.has(pid)) {
+      try {
+        const partyData = await localFetch('/party', { id: pid });
+        if (partyData && partyData.name) {
+          _partyNamesMap.set(pid, partyData.name);
+        }
+      } catch (_) {
+        // Se non riesce, useremo l'ID abbreviato
+      }
+    }
+  }
+  // --------------------------------------------------------
+
   const datasets = [];
   const legendDiv = document.getElementById('timelineLegend');
   legendDiv.innerHTML = '';
 
-  // Per ogni partito crea il dataset principale e la media mobile
   let colorIdx = 0;
   for (const pid of allPids) {
     if (pid === 'independent') continue;
     const color = _partyColorMap.get(pid) || PALETTE[colorIdx % PALETTE.length];
-    const name  = _partyNamesMap.get(pid) || pid.slice(-6);
+    const name  = _partyNamesMap.get(pid) || pid.slice(-6);   // ora dovrebbe esserci
     const data  = partySeatsPerElection.map(m => m[pid] || 0);
     if (data.every(v => v === 0)) continue;
 
-    // Punti con raggio maggiore per l'elezione corrente
-    const pointRadii = electionIds.map(eid => {
-      return (eid === _currentCongressElectionId) ? 7 : 4;
-    });
+    const pointRadii = electionIds.map(eid => (eid === _currentCongressElectionId) ? 7 : 4);
 
-    // Dataset principale (linea continua con punti)
     datasets.push({
       label: name,
       data,
@@ -416,15 +357,10 @@ async function loadTimelineData(elections, electionIds) {
       fill: false,
     });
 
-    // Media mobile a finestra 2
     if (data.length >= 2) {
-      const movingAvg = data.map((v, i) => {
-        if (i === 0) return v;
-        return Math.round((data[i-1] + data[i]) / 2);
-      });
-
+      const movingAvg = data.map((v, i) => (i === 0) ? v : Math.round((data[i-1] + data[i]) / 2));
       datasets.push({
-        label: '',                         // non mostrare in legenda
+        label: '',
         data: movingAvg,
         borderColor: color,
         backgroundColor: 'transparent',
@@ -437,7 +373,6 @@ async function loadTimelineData(elections, electionIds) {
       });
     }
 
-    // Aggiungi solo il partito principale alla legenda
     const item = document.createElement('div');
     item.className = 'tl-leg-item';
     item.innerHTML = `<span class="tl-leg-dot" style="background:${color}"></span>${name}`;
@@ -449,22 +384,22 @@ async function loadTimelineData(elections, electionIds) {
   if (_timelineChart && datasets.length) {
     _timelineChart.data.datasets = datasets;
     _timelineChart.update('active');
-    document.getElementById('timelineBadge').textContent = `${elections.length} elezioni`;
+    document.getElementById('timelineBadge').textContent = `${elections.length} elections`;
   }
 }
+
 function updateTimelineHighlight() {
   if (!_timelineChart || !_timelineElectionIds.length || !_currentCongressElectionId) return;
-
   const ids = _timelineElectionIds;
   _timelineChart.data.datasets.forEach(dataset => {
-    // Solo i dataset principali (con label non vuoto) hanno punti variabili
-    if (!dataset.label) return;  // salta le medie mobili
+    if (!dataset.label) return;
     dataset.pointRadius = ids.map(eid => (eid === _currentCongressElectionId) ? 7 : 4);
     dataset.pointHoverRadius = dataset.pointRadius.map(r => r + 2);
   });
   _timelineChart.update('none');
 }
-/* ── CONGRESS: party table ── */
+
+/* ── TABELLA PARTITI ── */
 function renderPartyTable(electedParties, totalSeats) {
   const sorted = [...electedParties].sort((a, b) => b.seats - a.seats);
   document.getElementById('partyTableBody').innerHTML = sorted.map(p => {
@@ -487,7 +422,7 @@ function renderPartyTable(electedParties, totalSeats) {
   }).join('');
 }
 
-/* ── CONGRESS: charts ── */
+/* ── GRAFICI CONGRESSO ── */
 function renderCharts(electedParties) {
   safeDestroy('seatsChart');
   safeDestroy('membersChart');
@@ -504,31 +439,14 @@ function renderCharts(electedParties) {
 
   _seatsChart = new Chart(document.getElementById('seatsChart').getContext('2d'), {
     type: 'doughnut',
-    data: {
-      labels: electedParties.map(p => p.name), datasets: [{
-        data: electedParties.map(p => p.seats),
-        backgroundColor: colorsA, borderColor: '#0e1117',
-        borderWidth: 3, hoverBorderColor: colors, hoverBorderWidth: 2,
-      }]
-    },
+    data: { labels: electedParties.map(p => p.name), datasets: [{ data: electedParties.map(p => p.seats), backgroundColor: colorsA, borderColor: '#0e1117', borderWidth: 3, hoverBorderColor: colors, hoverBorderWidth: 2 }] },
     options: {
       responsive: true, maintainAspectRatio: false,
       cutout: '65%', rotation: -90, circumference: 180,
       plugins: {
         legend: { display: false },
-        tooltip: {
-          ...tt, callbacks: {
-            title: i => i[0].label,
-            label: i => ` ${i.raw} seggi (${((i.raw / totalSeats) * 100).toFixed(1)}%) · ${electedParties[i.dataIndex].votes.toLocaleString()} voti`
-          }
-        },
-        centerText: {
-          text: `${totalSeats}`,
-          sub: 'seggi',
-          fontSize: 20,
-          color: '#e8c97a',
-          subColor: '#8892a4',
-        },
+        tooltip: { ...tt, callbacks: { title: i => i[0].label, label: i => ` ${i.raw} seggi (${((i.raw / totalSeats) * 100).toFixed(1)}%) · ${electedParties[i.dataIndex].votes.toLocaleString()} voti` } },
+        centerText: { text: `${totalSeats}`, sub: 'seggi', fontSize: 20, color: '#e8c97a', subColor: '#8892a4' },
       },
       onClick: (_, el) => { if (el.length) window.open(`${APP_BASE}/party/${electedParties[el[0].index].id}`, '_blank'); }
     },
@@ -536,23 +454,10 @@ function renderCharts(electedParties) {
 
   _membersChart = new Chart(document.getElementById('membersChart').getContext('2d'), {
     type: 'bar',
-    data: {
-      labels: electedParties.map(p => p.abbr), datasets: [{
-        data: electedParties.map(p => Number(p.members) || 0),
-        backgroundColor: colorsA, borderColor: colors,
-        borderWidth: 1.5, borderRadius: 5, borderSkipped: false,
-      }]
-    },
+    data: { labels: electedParties.map(p => p.abbr), datasets: [{ data: electedParties.map(p => Number(p.members) || 0), backgroundColor: colorsA, borderColor: colors, borderWidth: 1.5, borderRadius: 5, borderSkipped: false }] },
     options: {
       responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false }, tooltip: {
-          ...tt, callbacks: {
-            title: i => electedParties[i[0].dataIndex].name,
-            label: i => `${i.raw} iscritti`,
-          }
-        }
-      },
+      plugins: { legend: { display: false }, tooltip: { ...tt, callbacks: { title: i => electedParties[i[0].dataIndex].name, label: i => `${i.raw} iscritti` } } },
       scales: {
         y: { beginAtZero: true, ticks: { color: '#535e72' }, grid: { color: 'rgba(255,255,255,0.035)' }, border: { color: 'rgba(255,255,255,0.06)' } },
         x: { ticks: { color: '#8892a4', font: { size: 11 } }, grid: { display: false }, border: { color: 'rgba(255,255,255,0.06)' } }
@@ -562,7 +467,7 @@ function renderCharts(electedParties) {
   });
 }
 
-/* ── CONGRESS: all-parties HORIZONTAL chart ── */
+/* ── ALL PARTIES CHART (orizzontale) ── */
 function renderAllPartiesChart(allParties) {
   safeDestroy('allPartiesChart');
   if (!allParties.length) return;
@@ -593,35 +498,10 @@ function renderAllPartiesChart(allParties) {
     options: {
       indexAxis: 'y',
       responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false }, tooltip: {
-          ...tt, callbacks: {
-            title: i => sorted[i[0].dataIndex].name,
-            label: i => {
-              const p = sorted[i.dataIndex];
-              return `${i.raw} iscritti` + (p.seats > 0 ? ` · ${p.seats} seggi 🏛` : '');
-            }
-          }
-        }
-      },
+      plugins: { legend: { display: false }, tooltip: { ...tt, callbacks: { title: i => sorted[i[0].dataIndex].name, label: i => { const p = sorted[i.dataIndex]; return `${i.raw} iscritti` + (p.seats > 0 ? ` · ${p.seats} seggi 🏛` : ''); } } } },
       scales: {
-        x: {
-          beginAtZero: true,
-          ticks: { color: '#535e72', font: { size: 11 } },
-          grid: { color: 'rgba(255,255,255,0.035)' },
-          border: { color: 'rgba(255,255,255,0.06)' },
-        },
-        y: {
-          ticks: {
-            color: ctx => sorted[ctx.index]?.seats > 0 ? '#dde2ec' : '#535e72',
-            font: ctx => ({
-              size: 11,
-              weight: sorted[ctx.index]?.seats > 0 ? '600' : '400',
-            }),
-          },
-          grid: { display: false },
-          border: { color: 'rgba(255,255,255,0.06)' },
-        },
+        x: { beginAtZero: true, ticks: { color: '#535e72', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.035)' }, border: { color: 'rgba(255,255,255,0.06)' } },
+        y: { ticks: { color: ctx => sorted[ctx.index]?.seats > 0 ? '#dde2ec' : '#535e72', font: ctx => ({ size: 11, weight: sorted[ctx.index]?.seats > 0 ? '600' : '400' }) }, grid: { display: false }, border: { color: 'rgba(255,255,255,0.06)' } },
       },
       onClick: (_, el) => { if (el.length) window.open(`${APP_BASE}/party/${sorted[el[0].index].id}`, '_blank'); }
     },
@@ -629,122 +509,49 @@ function renderAllPartiesChart(allParties) {
   document.getElementById('badgeAllParties').textContent = `${allParties.length} partiti`;
 }
 
-/* ── PRESIDENTIAL VIEW ── */
+/* ── PRESIDENTIAL ── */
 function renderPresidentialTurnoutChart(currentElectionId = null) {
   const presidentialElections = _electionHistory
     .filter(e => e.type === 'president')
     .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-
   if (presidentialElections.length < 2) return;
 
   const canvas = document.getElementById('presidentTurnoutChart');
   if (!canvas) return;
-
-  // Distruggi eventuale grafico precedente
   const existing = Chart.getChart(canvas);
   if (existing) existing.destroy();
 
-  const labels = presidentialElections.map(e =>
-    new Date(e.createdAt).toLocaleDateString('it', { month: 'short', year: '2-digit' })
-  );
+  const labels = presidentialElections.map(e => new Date(e.createdAt).toLocaleDateString('it', { month: 'short', year: '2-digit' }));
   const data = presidentialElections.map(e => e.votesCount || 0);
   const electionIds = presidentialElections.map(e => e._id);
 
-  // Costruisci i punti con raggio variabile
-  const pointRadii = presidentialElections.map(e => {
-    return (currentElectionId && e._id === currentElectionId) ? 8 : 4;
-  });
+  const pointRadii = presidentialElections.map(e => (currentElectionId && e._id === currentElectionId) ? 8 : 4);
+  const movingAverage = data.map((v, i) => (i === 0) ? v : Math.round((data[i - 1] + data[i]) / 2));
 
-  // Calcola la media mobile a finestra 2 (semplice)
-  const movingAverage = [];
-  for (let i = 0; i < data.length; i++) {
-    if (i === 0) {
-      movingAverage.push(data[i]); // primo punto = valore reale
-    } else {
-      const avg = (data[i - 1] + data[i]) / 2;
-      movingAverage.push(Math.round(avg));
-    }
-  }
-
-  const ctx = canvas.getContext('2d');
-  new Chart(ctx, {
+  new Chart(canvas.getContext('2d'), {
     type: 'line',
     data: {
       labels,
       datasets: [
-        // Dati reali
-        {
-          label: 'Voti totali',
-          data,
-          borderColor: '#e8c97a',
-          backgroundColor: 'rgba(232,201,122,0.1)',
-          borderWidth: 2,
-          pointRadius: pointRadii,           // ← usa array raggi variabili
-          pointHoverRadius: pointRadii.map(r => r + 2),
-          pointBackgroundColor: '#e8c97a',
-          tension: 0.3,
-          fill: true,
-        },
-        // Media mobile
-        {
-          label: 'Media mobile (2)',
-          data: movingAverage,
-          borderColor: '#60a5fa',
-          backgroundColor: 'transparent',
-          borderWidth: 2,
-          borderDash: [6, 3],
-          pointRadius: 0,                   // nessun punto
-          pointHoverRadius: 3,
-          tension: 0.3,
-          fill: false,
-        }
+        { label: 'Voti totali', data, borderColor: '#e8c97a', backgroundColor: 'rgba(232,201,122,0.1)', borderWidth: 2, pointRadius: pointRadii, pointHoverRadius: pointRadii.map(r => r + 2), pointBackgroundColor: '#e8c97a', tension: 0.3, fill: true },
+        { label: 'Media mobile (2)', data: movingAverage, borderColor: '#60a5fa', backgroundColor: 'transparent', borderWidth: 2, borderDash: [6, 3], pointRadius: 0, pointHoverRadius: 3, tension: 0.3, fill: false },
       ]
     },
     options: {
-      responsive: true,
-      maintainAspectRatio: false,
+      responsive: true, maintainAspectRatio: false,
       plugins: {
         legend: { display: false },
         tooltip: {
-          backgroundColor: '#0f1521',
-          borderColor: 'rgba(197,150,74,.3)',
-          borderWidth: 1,
-          titleColor: '#e8c97a',
-          bodyColor: '#8892a4',
-          padding: 10,
-          cornerRadius: 6,
-          callbacks: {
-            title: items => `Elezione ${items[0].label}`,
-            label: item => {
-              const datasetLabel = item.dataset.label;
-              return ` ${datasetLabel}: ${item.parsed.y.toLocaleString()} voti`;
-            }
-          }
+          backgroundColor: '#0f1521', borderColor: 'rgba(197,150,74,.3)', borderWidth: 1,
+          titleColor: '#e8c97a', bodyColor: '#8892a4', padding: 10, cornerRadius: 6,
+          callbacks: { title: items => `Elezione ${items[0].label}`, label: item => ` ${item.dataset.label}: ${item.parsed.y.toLocaleString()} voti` }
         }
       },
       scales: {
-        x: {
-          ticks: { color: '#535e72', font: { size: 11 } },
-          grid: { color: 'rgba(255,255,255,0.035)' },
-          border: { color: 'rgba(255,255,255,0.06)' }
-        },
-        y: {
-          beginAtZero: true,
-          ticks: { color: '#535e72', callback: v => v.toLocaleString() },
-          grid: { color: 'rgba(255,255,255,0.035)' },
-          border: { color: 'rgba(255,255,255,0.06)' }
-        }
+        x: { ticks: { color: '#535e72', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.035)' }, border: { color: 'rgba(255,255,255,0.06)' } },
+        y: { beginAtZero: true, ticks: { color: '#535e72', callback: v => v.toLocaleString() }, grid: { color: 'rgba(255,255,255,0.035)' }, border: { color: 'rgba(255,255,255,0.06)' } }
       },
-      onClick: (evt, elements) => {
-        if (!elements.length) return;
-        const idx = elements[0].index;
-        const eid = electionIds[idx];
-        if (eid) {
-          document.getElementById('electionSelect').value = eid;
-          document.getElementById('electionIdInput').value = eid;
-          loadElection(eid);
-        }
-      }
+      onClick: (evt, elements) => { if (elements.length) { const idx = elements[0].index; const eid = electionIds[idx]; if (eid) { document.getElementById('electionSelect').value = eid; document.getElementById('electionIdInput').value = eid; loadElection(eid); } } }
     }
   });
 }
@@ -757,10 +564,8 @@ async function loadPresidentialElection(election) {
 
   const candidates = [];
   for (const c of election.candidates) {
-    const userData = await getUserCached(c.user || c.userId);
-    const votes = election.votes
-      ? (election.votes[String(c.user || c.userId)] ?? c.voteCount ?? 0)
-      : (c.voteCount ?? 0);
+    const userData = await localFetch('/user', { id: c.user || c.userId });
+    const votes = election.votes ? (election.votes[String(c.user || c.userId)] ?? c.voteCount ?? 0) : (c.voteCount ?? 0);
     candidates.push({ ...c, userData, votes, color: PALETTE[candidates.length % PALETTE.length] });
   }
   candidates.sort((a, b) => b.votes - a.votes);
@@ -822,23 +627,11 @@ async function loadPresidentialElection(election) {
   safeDestroy('presidentChart');
   _presidentChart = new Chart(document.getElementById('presidentChart').getContext('2d'), {
     type: 'bar',
-    data: {
-      labels: candidates.map(c => c.userData.username),
-      datasets: [{ data: candidates.map(c => c.votes), backgroundColor: candidates.map(c => c.color + 'cc'), borderColor: candidates.map(c => c.color), borderWidth: 1.5, borderRadius: 6, borderSkipped: false }],
-    },
+    data: { labels: candidates.map(c => c.userData.username), datasets: [{ data: candidates.map(c => c.votes), backgroundColor: candidates.map(c => c.color + 'cc'), borderColor: candidates.map(c => c.color), borderWidth: 1.5, borderRadius: 6, borderSkipped: false }] },
     options: {
       responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false }, tooltip: {
-          backgroundColor: '#0f1521', borderColor: 'rgba(197,150,74,.3)', borderWidth: 1,
-          titleColor: '#e8c97a', bodyColor: '#8892a4', padding: 10, cornerRadius: 6,
-          callbacks: { title: i => candidates[i[0].dataIndex].userData.username, label: i => ` ${i.raw.toLocaleString()} voti (${totalVotes ? ((i.raw / totalVotes) * 100).toFixed(1) + '%' : '—'})` }
-        }
-      },
-      scales: {
-        y: { beginAtZero: true, ticks: { color: '#535e72' }, grid: { color: 'rgba(255,255,255,0.035)' } },
-        x: { ticks: { color: '#8892a4' }, grid: { display: false } }
-      },
+      plugins: { legend: { display: false }, tooltip: { backgroundColor: '#0f1521', borderColor: 'rgba(197,150,74,.3)', borderWidth: 1, titleColor: '#e8c97a', bodyColor: '#8892a4', padding: 10, cornerRadius: 6, callbacks: { title: i => candidates[i[0].dataIndex].userData.username, label: i => ` ${i.raw.toLocaleString()} voti (${totalVotes ? ((i.raw / totalVotes) * 100).toFixed(1) + '%' : '—'})` } } },
+      scales: { y: { beginAtZero: true, ticks: { color: '#535e72' }, grid: { color: 'rgba(255,255,255,0.035)' } }, x: { ticks: { color: '#8892a4' }, grid: { display: false } } },
     },
   });
 
@@ -880,17 +673,13 @@ async function loadCongressElection(election) {
   });
 
   const allPartyDetailsMap = {};
-  await Promise.all(electedPartyIds.map(pid =>
-    getPartyDetails(pid).then(p => { allPartyDetailsMap[pid] = p; })
-  ));
+  await Promise.all(electedPartyIds.map(pid => localFetch('/party', { id: pid }).then(p => { allPartyDetailsMap[pid] = p; })));
 
   const allCsvIds = [..._partyColorMap.keys()];
   const nonElectedCsvIds = allCsvIds.filter(id => !electedPartyIds.includes(id) && id !== 'independent');
   if (nonElectedCsvIds.length > 0) {
     setStatus(`Recupero ${nonElectedCsvIds.length} partiti dal CSV…`, 'loading');
-    await Promise.all(nonElectedCsvIds.map(pid =>
-      getPartyDetails(pid).then(p => { allPartyDetailsMap[pid] = p; })
-    ));
+    await Promise.all(nonElectedCsvIds.map(pid => localFetch('/party', { id: pid }).then(p => { allPartyDetailsMap[pid] = p; })));
   }
 
   const allUserIds = new Set();
@@ -898,9 +687,7 @@ async function loadCongressElection(election) {
   Object.values(allPartyDetailsMap).forEach(pd => { if (pd?.leader) allUserIds.add(String(pd.leader)); });
 
   const userMap = {};
-  for (const uid of allUserIds) {
-    userMap[uid] = await getUserCached(uid);
-  }
+  for (const uid of allUserIds) { userMap[uid] = await localFetch('/user', { id: uid }); }
 
   const electedParties = electedPartyIds.map(pid => {
     const color = _partyColorMap.get(pid) || PALETTE[electedPartyIds.indexOf(pid) % PALETTE.length];
@@ -933,6 +720,13 @@ async function loadCongressElection(election) {
     return { id: pid, name, abbr: makeAbbr(name), seats: partySeatsMap[pid] || 0, members: rawMembers, votes: partyVotesMap[pid] || 0, color };
   }).sort((a, b) => b.seats - a.seats || b.members - a.members);
 
+  if (_partyColorMap.size > 0) {
+    document.getElementById('allPartiesRow').style.display = '';
+    renderAllPartiesChart(allParties);
+  } else {
+    document.getElementById('allPartiesRow').style.display = 'none';
+  }
+
   const totalSeats = electedParties.reduce((s, p) => s + p.seats, 0);
   const majority = Math.floor(totalSeats / 2) + 1;
 
@@ -954,9 +748,8 @@ async function loadCongressElection(election) {
 
   renderPartyTable(electedParties, totalSeats);
   renderCharts(electedParties);
-  renderAllPartiesChart(allParties);
-  // Aggiorna l'evidenziazione nella timeline (punto più grande sull'elezione corrente)
   updateTimelineHighlight();
+
   const badge = `${electedParties.length} partiti · ${totalSeats} seggi`;
   setStatus(badge, '');
   document.getElementById('badgeCount').textContent = badge;
@@ -988,7 +781,7 @@ async function loadElection(id) {
       const controller = new AbortController();
       _pendingRequest = { controller };
 
-      const election = await rateLimited(() => trpcPost(API5, 'election.getElection', { electionId }, controller.signal));
+      const election = await localFetch('/election', { id: electionId });
       if (!election?.candidates) throw new Error('Dati elezione mancanti.');
 
       if (election.type === 'president') await loadPresidentialElection(election);
@@ -1009,18 +802,35 @@ async function loadElection(id) {
 
 /* ── BOOT ── */
 document.addEventListener('DOMContentLoaded', () => {
-  /*if (!_apiKey) {
-    const input = prompt('🔑 Inserisci la tua API Key di WarEra (opzionale). Premi Annulla per continuare senza.', '');
-    if (input && input.trim()) {
-      _apiKey = input.trim();
-      sessionStorage.setItem('we_key', _apiKey);
+  // 1. Carica la lista delle nazioni
+  loadCountries();
+
+  // 2. Quando l'utente cambia nazione, ricarica tutto
+  document.getElementById('countrySelect').addEventListener('change', async function () {
+    const newCountryId = this.value;
+    if (newCountryId === _currentCountryId) return;
+
+    _currentCountryId = newCountryId;
+
+    _electionHistory = [];
+    _currentCongressElectionId = null;
+    _partyColorMap.clear();
+    _partyNamesMap.clear();
+
+    setStatus('Loading…', 'loading');
+
+    try {
+      await loadElectionsHistory();
+    } catch (err) {
+      console.error('Error switching country:', err);
+      setStatus('Error loading data', 'error');
     }
-  }*/
+  });
 
-  loadPartyColors('parties.csv')
-    .then(() => preloadPartyNames())
-    .then(() => loadElectionsHistory());
+  // 3. Avvia il caricamento iniziale (Italia di default)
+  loadElectionsHistory();
 
+  // 4. Altri listener
   document.getElementById('loadBtn').addEventListener('click', () => loadElection());
   document.getElementById('electionIdInput').addEventListener('keydown', e => { if (e.key === 'Enter') loadElection(); });
   document.getElementById('electionSelect').addEventListener('change', function () {
