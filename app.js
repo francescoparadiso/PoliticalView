@@ -1,4 +1,4 @@
-const API_BASE = 'http://37.77.140.194:3000/api';
+const API_BASE = 'https://both-shelve-usher.ngrok-free.dev/api';
 const APP_BASE = 'https://app.warera.io';
 
 const PALETTE = [
@@ -58,7 +58,10 @@ function makeAbbr(name) {
 async function localFetch(path, params = {}) {
   const qs = new URLSearchParams(params).toString();
   const url = `${API_BASE}${path}${qs ? '?' + qs : ''}`;
-  const headers = _apiKey ? { Authorization: `Bearer ${_apiKey}` } : {};
+  const headers = {
+    ...(_apiKey && { Authorization: `Bearer ${_apiKey}` }),
+    'ngrok-skip-browser-warning': 'true'  // ← aggiungi questa riga
+  };
   const res = await fetch(url, { headers });
   if (!res.ok) throw new Error(`HTTP ${res.status} → ${path}`);
   return await res.json();
