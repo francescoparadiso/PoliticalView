@@ -58,11 +58,15 @@ async function loadPartyColors(csvUrl) {
     const lines = text.split('\n');
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
-      if (!line || line.startsWith('#')) continue;
-      const parts = line.split(',').map(s => s.trim());
+      if (!line || line.startsWith('#')) continue;               // salta commenti
+      const parts = line.split(',').map(s => s.trim()).filter(Boolean);
       if (parts.length >= 2) {
-        const [id, color] = parts;
-        if (id && color) _partyColorMap.set(id, color);
+        // Se ci sono almeno 2 colonne, prendiamo il primo come id e l'ultimo come colore
+        const id    = parts[0];            // primo campo
+        const color = parts[parts.length - 1]; // ultimo campo (salta eventuali nomi in mezzo)
+        if (id && color) {
+          _partyColorMap.set(id, color);
+        }
       }
     }
     console.log(`🎨 Caricati ${_partyColorMap.size} colori dal CSV`);
@@ -160,7 +164,7 @@ function renderCharts(electedParties) {
       borderColor:'#0e1117', borderWidth:3, hoverBorderColor:colors, hoverBorderWidth:2,
     }]},
     options: { responsive:true, maintainAspectRatio:false, cutout:'65%',
-      rotation: -180, circumference: 180,
+      rotation: -90, circumference: 180,
       plugins: {
         legend: { display: false },
         tooltip: { ...tt, callbacks:{
