@@ -8,12 +8,8 @@ const PALETTE = [
   '#6366f1','#14b8a6','#d946ef','#0ea5e9','#f59e0b',
 ];
 
-const ALL_PARTY_IDS = [
-  '69ef93ec8ab2a4aefe49095b','69e72e6cc830caae56466385','69d58550aa2c2516cb8b3903',
-  '69d1239878dfd418157901cb','69bf4483f43e5ce727ce8d5f','698d65eb59a9c1e30d457eb4',
-  '698d08553e60459e0833a4db','698d017eebb98b9142fa280d','698cfc8c842d2f3f58663199',
-];
-
+let _partyColorMap = new Map();  // id -> colore dal CSV
+let _partyNamesMap = new Map();  // id -> nome (recuperato via API)
 let _seatsChart, _membersChart, _allPartiesChart, _presidentChart;
 let _apiKey = sessionStorage.getItem('we_key') || '';
 let _pendingRequest = null;
@@ -51,6 +47,28 @@ async function fetchUsersSequential(userIds) {
     } catch (_) { map[uid] = { username:`#${uid.slice(-6)}`, avatarUrl:null }; }
   }
   return map;
+}
+
+/* ── CARICAMENTO CSV PARTITI (id, colore) ── */
+async function loadPartyColors(csvUrl) {
+  try {
+    const res = await fetch(csvUrl);
+    if (!res.ok) throw new Error('CSV non trovato');
+    const text = await res.text();
+    const lines = text.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line || line.startsWith('#')) continue;
+      const parts = line.split(',').map(s => s.trim());
+      if (parts.length >= 2) {
+        const [id, color] = parts;
+        if (id && color) _partyColorMap.set(id, color);
+      }
+    }
+    console.log(`🎨 Caricati ${_partyColorMap.size} colori dal CSV`);
+  } catch (err) {
+    console.warn('Impossibile caricare il CSV dei colori, userò colori di default.', err.message);
+  }
 }
 
 /* ── HELPERS ── */
@@ -142,16 +160,32 @@ function renderCharts(electedParties) {
       borderColor:'#0e1117', borderWidth:3, hoverBorderColor:colors, hoverBorderWidth:2,
     }]},
     options: { responsive:true, maintainAspectRatio:false, cutout:'65%',
-      rotation: -90, circumference: 180,
-      plugins: { legend:{display:false}, tooltip:{ ...tt, callbacks:{
-        title: i => i[0].label,
-        label: i => {
-          const t = electedParties.reduce((s,p)=>s+p.seats,0);
-          const party = electedParties[i.dataIndex];
-          return ` ${i.raw} seggi (${((i.raw/t)*100).toFixed(1)}%) · ${party.votes.toLocaleString()} voti`;
+      rotation: -180, circumference: 180,
+      plugins: {
+        legend: { display: false },
+        tooltip: { ...tt, callbacks:{
+          title: i => i[0].label,
+          label: i => {
+            const t = electedParties.reduce((s,p)=>s+p.seats,0);
+            const party = electedParties[i.dataIndex];
+            return ` ${i.raw} seggi (${((i.raw/t)*100).toFixed(1)}%) · ${party.votes.toLocaleString()} voti`;
+          }
+        }},
+        centerText: {
+          id: 'centerText',
+          afterDraw(chart) {
+            const { ctx, chartArea: { width, height } } = chart;
+            const total = chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
+            ctx.save();
+            ctx.font = 'bold 18px "Playfair Display", serif';
+            ctx.fillStyle = '#e8c97a';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`${total} seggi`, width / 2, height * 0.75);
+            ctx.restore();
+          }
         }
-      }}},
-      
+      },
       onClick: (_,el) => { if(el.length) window.open(`${APP_BASE}/party/${electedParties[el[0].index].id}`,'_blank'); }
     },
   });
@@ -354,7 +388,7 @@ async function loadCongressElection(election) {
   });
   const electedPartyIds = Object.keys(partySeatsMap);
 
-  // ── Voti per partito (somma di tutti i candidati, eletti e non) ──
+  // Voti per partito (somma di tutti i candidati, eletti e non)
   const partyVotesMap = {};
   election.candidates.forEach(c => {
     const pid = String(c.party || c.partyId || 'independent');
@@ -364,24 +398,46 @@ async function loadCongressElection(election) {
     partyVotesMap[pid] = (partyVotesMap[pid] || 0) + votes;
   });
 
-  setStatus(`Recupero ${electedPartyIds.length} partiti eletti…`, 'loading');
+  // Mappa temporanea per i dettagli di TUTTI i partiti
+  const allPartyDetailsMap = {};
 
-  const electedDetailsMap = {};
-  await Promise.all(electedPartyIds.map(async (pid, idx) => {
+  // Recupera i dettagli dei partiti eletti
+  await Promise.all(electedPartyIds.map(async (pid) => {
+    if (pid === 'independent') return;
     try {
       const p = await trpcPost(API2, 'party.getById', { partyId: pid });
-      electedDetailsMap[pid] = { ...p, _color: PALETTE[idx % PALETTE.length] };
+      allPartyDetailsMap[pid] = p;
+      _partyNamesMap.set(pid, p.name);
     } catch (_) {
-      electedDetailsMap[pid] = { name:`Partito ${pid.slice(-6)}`, _color: PALETTE[idx % PALETTE.length], members: [] };
+      allPartyDetailsMap[pid] = { name: `Partito ${pid.slice(-6)}`, members: [] };
     }
   }));
 
+  // Recupera i dettagli dei partiti non eletti presenti nel CSV
+  const allCsvIds = [..._partyColorMap.keys()];
+  const nonElectedCsvIds = allCsvIds.filter(id => !electedPartyIds.includes(id) && id !== 'independent');
+  if (nonElectedCsvIds.length > 0) {
+    setStatus(`Recupero ${nonElectedCsvIds.length} partiti dal CSV…`, 'loading');
+    await Promise.all(nonElectedCsvIds.map(async (pid) => {
+      try {
+        const p = await trpcPost(API2, 'party.getById', { partyId: pid });
+        allPartyDetailsMap[pid] = p;
+        _partyNamesMap.set(pid, p.name);
+      } catch (_) {
+        allPartyDetailsMap[pid] = { name: `Partito ${pid.slice(-6)}`, members: [] };
+      }
+    }));
+  }
+
+  // Recupera gli utenti (eletti + leader)
   const allUserIds = new Set();
   elected.forEach(c => { if (c.userId || c.user) allUserIds.add(String(c.userId || c.user)); });
-  Object.values(electedDetailsMap).forEach(pd => { if (pd?.leader) allUserIds.add(String(pd.leader)); });
+  Object.values(allPartyDetailsMap).forEach(pd => { if (pd?.leader) allUserIds.add(String(pd.leader)); });
   const userMap = await fetchUsersSequential([...allUserIds]);
 
-  const electedParties = electedPartyIds.map((pid, idx) => {
+  // Costruisci electedParties
+  const electedParties = electedPartyIds.map(pid => {
+    const color = _partyColorMap.get(pid) || PALETTE[electedPartyIds.indexOf(pid) % PALETTE.length];
     if (pid === 'independent') {
       return {
         id: pid,
@@ -390,9 +446,7 @@ async function loadCongressElection(election) {
         seats: partySeatsMap[pid],
         members: 0,
         votes: partyVotesMap[pid] || 0,
-        leaderName: null,
-        leaderAvatarUrl: null,
-        leaderId: null,
+        leaderName: null, leaderAvatarUrl: null, leaderId: null,
         color: '#6b7280',
         users: (partyUsersMap[pid] || []).map(uid => ({
           userId: uid,
@@ -402,62 +456,51 @@ async function loadCongressElection(election) {
       };
     }
 
-    const pd       = electedDetailsMap[pid];
-    const seats    = partySeatsMap[pid];
+    const pd = allPartyDetailsMap[pid] || {};
+    const name = pd.name || _partyNamesMap.get(pid) || `Partito ${pid.slice(-6)}`;
     const leaderId = pd.leader ? String(pd.leader) : null;
-    const leaderData = leaderId ? (userMap[leaderId] || { username:`#${leaderId.slice(-6)}`, avatarUrl:null }) : null;
+    const leaderData = leaderId ? (userMap[leaderId] || { username: `#${leaderId.slice(-6)}`, avatarUrl: null }) : null;
     const rawMembers = Array.isArray(pd.members) ? pd.members.length : Number(pd.membersCount || pd.memberCount || 0);
     const users = (partyUsersMap[pid] || []).map(uid => ({
       userId: uid,
-      username:  userMap[uid]?.username  || `#${uid.slice(-6)}`,
+      username: userMap[uid]?.username || `#${uid.slice(-6)}`,
       avatarUrl: userMap[uid]?.avatarUrl || null,
     }));
     return {
       id: pid,
-      name:    pd.name || (pid === 'independent' ? 'Indipendente' : `Partito ${pid.slice(-6)}`),
-      abbr:    pd.abbreviation || pd.abbr || (pd.name || (pid === 'independent' ? 'IND' : 'P')).substring(0, 3).toUpperCase(),
-      seats, members: rawMembers,
+      name,
+      abbr: name.substring(0, 3).toUpperCase(),
+      seats: partySeatsMap[pid],
+      members: rawMembers,
       votes: partyVotesMap[pid] || 0,
       leaderName: leaderData?.username || null,
       leaderAvatarUrl: leaderData?.avatarUrl || null,
       leaderId,
-      color: pd._color || '#6b7280',
+      color,
       users,
     };
   }).sort((a, b) => b.seats - a.seats);
 
-  // ── allParties ──
-  const allPartyDetailsMap = { ...electedDetailsMap };
-  const missingIds = ALL_PARTY_IDS.filter(pid => !allPartyDetailsMap[pid]);
-  if (missingIds.length) {
-    setStatus(`Recupero altri ${missingIds.length} partiti…`, 'loading');
-    await Promise.all(missingIds.map(async (pid, i) => {
-      const colorIdx = electedPartyIds.length + i;
-      try {
-        const p = await trpcPost(API2, 'party.getById', { partyId: pid });
-        allPartyDetailsMap[pid] = { ...p, _color: PALETTE[colorIdx % PALETTE.length] };
-      } catch (_) {
-        allPartyDetailsMap[pid] = { name:`Partito ${pid.slice(-6)}`, _color: PALETTE[colorIdx % PALETTE.length], members: [] };
-      }
-    }));
-  }
-  const allPartyIds = [...new Set([...ALL_PARTY_IDS, ...electedPartyIds])];
+  // Costruisci allParties (tutti i partiti del CSV + eventuali eletti non in CSV)
+  const allPartyIds = [...new Set([...allCsvIds, ...electedPartyIds])];
   const allParties = allPartyIds.map(pid => {
+    const color = _partyColorMap.get(pid) || '#6b7280';
     const pd = allPartyDetailsMap[pid] || {};
+    const name = pd.name || _partyNamesMap.get(pid) || (pid === 'independent' ? 'Indipendente' : `Partito ${pid.slice(-6)}`);
     const rawMembers = Array.isArray(pd.members) ? pd.members.length : Number(pd.membersCount || pd.memberCount || 0);
     return {
       id: pid,
-      name:    pd.name || (pid === 'independent' ? 'Indipendente' : `Partito ${pid.slice(-6)}`),
-      abbr:    pd.abbreviation || pd.abbr || (pd.name || (pid === 'independent' ? 'IND' : 'P')).substring(0, 3).toUpperCase(),
-      seats:   partySeatsMap[pid] || 0,
+      name,
+      abbr: name.substring(0, 3).toUpperCase(),
+      seats: partySeatsMap[pid] || 0,
       members: rawMembers,
-      votes:   partyVotesMap[pid] || 0,
-      color:   pd._color || PALETTE[0],
+      votes: partyVotesMap[pid] || 0,
+      color,
     };
   }).sort((a, b) => b.seats - a.seats || b.members - a.members);
 
-  const totalSeats     = electedParties.reduce((s,p) => s+p.seats, 0);
-  const majority       = Math.floor(totalSeats/2)+1;
+  const totalSeats = electedParties.reduce((s,p) => s+p.seats, 0);
+  const majority   = Math.floor(totalSeats/2)+1;
 
   fillStat('stat-seats',   totalSeats);
   fillStat('stat-parties', electedParties.length);
@@ -540,7 +583,10 @@ async function loadElection(id) {
 
 /* ── BOOT ── */
 document.addEventListener('DOMContentLoaded', () => {
-  loadElectionsHistory();
+  // Carica i colori dal CSV, poi lo storico elezioni
+  loadPartyColors('parties.csv').then(() => {
+    loadElectionsHistory();
+  });
 
   document.getElementById('loadBtn').addEventListener('click', () => loadElection());
   document.getElementById('electionIdInput').addEventListener('keydown', e => {
