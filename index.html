@@ -1,179 +1,204 @@
 <!DOCTYPE html>
 <html lang="it">
-
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WarEra · Parlamento Italiano</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link
-    href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Sora:wght@300;400;500;600&display=swap"
-    rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Sora:wght@300;400;500;600&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
   <link rel="stylesheet" href="style.css">
 </head>
-
 <body>
-  <div class="app">
+<div class="app">
 
-    <!-- HEADER -->
-    <header class="header">
-      <div class="header-brand">
-        <div class="header-logo">🏛️</div>
-        <div>
-          <div class="header-title">Parlamento Italiano</div>
-          <div class="header-sub">WarEra · Dati live da api5.warera.io</div>
-        </div>
-      </div>
-      <div class="header-controls">
-        <div class="input-wrap" style="min-width:200px;">
-          <select id="electionSelect"
-            style="width:100%; padding:8px 12px; background:var(--s2); border:1px solid var(--bd2); border-radius:var(--r2); color:var(--text); font-family:inherit; font-size:.85rem; outline:none;">
-            <option value="">— Scegli un'elezione —</option>
-          </select>
-        </div>
-        <span style="color:var(--text3);font-size:.8rem;">oppure</span>
-        <div class="input-wrap">
-          <input type="text" id="electionIdInput" placeholder="ID Elezione manuale" spellcheck="false">
-        </div>
-        <button class="btn-load" id="loadBtn">▶ Carica</button>
-        <span class="badge-status loading" id="statusBadge">In attesa…</span>
-      </div>
-    </header>
-
-    <!-- STATS -->
-    <div class="stats-row">
-      <div class="stat hl">
-        <div class="stat-label">Seggi totali</div>
-        <div class="stat-value" id="stat-seats">—</div>
-        <div class="stat-sub">In parlamento</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">Partiti</div>
-        <div class="stat-value" id="stat-parties">—</div>
-        <div class="stat-sub">Rappresentati</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">Eletti</div>
-        <div class="stat-value" id="stat-elected">—</div>
-        <div class="stat-sub">Parlamentari</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">Maggioranza</div>
-        <div class="stat-value" id="stat-majority">—</div>
-        <div class="stat-sub">Soglia (50%+1)</div>
-      </div>
-      <div class="stat hl">
-        <div class="stat-label">Primo partito</div>
-        <div class="stat-value" id="stat-leader" style="font-size:.9rem;padding-top:7px;">—</div>
-        <div class="stat-sub">Per seggi</div>
+  <!-- HEADER -->
+  <header class="header">
+    <div class="header-brand">
+      <div class="header-logo">🏛️</div>
+      <div>
+        <div class="header-title">Parlamento Italiano</div>
+        <div class="header-sub">WarEra · Dati live da api5.warera.io</div>
       </div>
     </div>
+    <div class="header-controls">
+      <div class="input-wrap select-wrap">
+        <select id="electionSelect">
+          <option value="">— Scegli un'elezione —</option>
+        </select>
+      </div>
+      <span class="or-divider">oppure</span>
+      <div class="input-wrap">
+        <input type="text" id="electionIdInput" placeholder="ID Elezione manuale" spellcheck="false">
+      </div>
+      <button class="btn-load" id="loadBtn">▶ Carica</button>
+      <span class="badge-status loading" id="statusBadge">In attesa…</span>
+    </div>
+  </header>
 
-    <!-- ══ VISTA PRESIDENZIALE (solo elezioni presidente) ══ -->
-    <div id="president-view" style="display:none;">
-      <div class="panel pres-panel">
+  <!-- STATS con skeleton -->
+  <div class="stats-row" id="statsRow">
+    <div class="stat hl">
+      <div class="stat-label">Seggi totali</div>
+      <div class="stat-value skeleton-val" id="stat-seats">—</div>
+      <div class="stat-sub">In parlamento</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Partiti</div>
+      <div class="stat-value skeleton-val" id="stat-parties">—</div>
+      <div class="stat-sub">Rappresentati</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Eletti</div>
+      <div class="stat-value skeleton-val" id="stat-elected">—</div>
+      <div class="stat-sub">Parlamentari</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Maggioranza</div>
+      <div class="stat-value skeleton-val" id="stat-majority">—</div>
+      <div class="stat-sub">Soglia (50%+1)</div>
+    </div>
+    <div class="stat hl">
+      <div class="stat-label">Primo partito</div>
+      <div class="stat-value skeleton-val" id="stat-leader" style="font-size:.9rem;padding-top:7px;">—</div>
+      <div class="stat-sub">Per seggi</div>
+    </div>
+  </div>
+
+  <!-- ══ TIMELINE ══ -->
+  <div class="panel timeline-panel" id="timelinePanel" style="display:none; margin-bottom:16px;">
+    <div class="panel-head">
+      <div class="panel-icon">📈</div>
+      <h2>Storico Elezioni Congressuali</h2>
+      <span class="badge-count" id="timelineBadge"></span>
+      <div class="timeline-legend" id="timelineLegend"></div>
+    </div>
+    <div class="timeline-chart-wrap">
+      <canvas id="timelineChart" role="img" aria-label="Andamento seggi nel tempo"></canvas>
+    </div>
+    <div class="timeline-footer">
+      <span class="timeline-tip">💡 Clicca su una elezione per caricarla · Solo elezioni congressuali</span>
+    </div>
+  </div>
+
+  <!-- ══ VISTA PRESIDENZIALE ══ -->
+  <div id="president-view" style="display:none;">
+    <div class="panel pres-panel">
+      <div class="panel-head">
+        <div class="panel-icon">🗳</div>
+        <h2>Elezione Presidenziale</h2>
+        <span class="badge-count" id="pres-status-badge" style="margin-left:auto;"></span>
+      </div>
+      <div id="pres-winner-banner" class="pres-winner" style="display:none;"></div>
+      <div id="pres-race" class="pres-race"></div>
+      <div class="pres-chart-wrap">
+        <canvas id="presidentChart" role="img" aria-label="Voti elezione presidenziale"></canvas>
+      </div>
+      <div id="pres-meta" class="pres-meta"></div>
+  <div class="pres-chart-wrap" style="margin-top:16px;">
+  <h3 style="font-family:'Playfair Display',serif;font-size:.9rem;color:var(--text2);margin-bottom:8px;">📈 Affluenza alle presidenziali</h3>
+  <canvas id="presidentTurnoutChart" role="img" aria-label="Andamento voti presidenziali"></canvas>
+</div>
+    </div>
+  </div>
+
+  <!-- ══ VISTA PARLAMENTARE ══ -->
+  <div id="congress-view" style="display:none;">
+
+    <div class="main-grid">
+      <!-- Parlamento -->
+      <div class="panel">
         <div class="panel-head">
-          <div class="panel-icon">🗳</div>
-          <h2>Elezione Presidenziale</h2>
-          <span class="badge-count" id="pres-status-badge" style="margin-left:auto;"></span>
+          <div class="panel-icon">🏛</div>
+          <h2>Composizione Parlamento</h2>
+          <span class="badge-count" id="badgeCount">—</span>
         </div>
-
-        <!-- Winner banner -->
-        <div id="pres-winner-banner" class="pres-winner" style="display:none;"></div>
-
-        <!-- Candidate race -->
-        <div id="pres-race" class="pres-race"></div>
-
-        <!-- Chart -->
-        <div class="pres-chart-wrap">
-          <canvas id="presidentChart" role="img" aria-label="Voti elezione presidenziale"></canvas>
+        <!-- Skeleton parliament -->
+        <div id="parliamentSkeleton" class="parliament-skeleton">
+          <div class="parl-sk-arc"></div>
+          <div class="parl-sk-dots"></div>
         </div>
+        <div id="parliamentContainer" class="parliament-wrap" style="display:none;"></div>
+        <div id="legendContainer" class="parl-legend"></div>
+      </div>
 
-        <!-- Meta info -->
-        <div id="pres-meta" class="pres-meta"></div>
+      <!-- Tabella -->
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-icon">📋</div>
+          <h2>Dettaglio Parlamento</h2>
+        </div>
+        <!-- Skeleton table -->
+        <div id="tableSkeleton" class="table-skeleton">
+          <div class="sk-row sk-header"></div>
+          <div class="sk-row"></div>
+          <div class="sk-row"></div>
+          <div class="sk-row"></div>
+          <div class="sk-row"></div>
+          <div class="sk-row"></div>
+        </div>
+        <table class="party-table" id="partyTable" style="display:none;">
+          <thead>
+            <tr>
+              <th>Partito</th>
+              <th style="width:130px">Seggi</th>
+              <th>Iscritti</th>
+              <th>Voti</th>
+              <th>% seggi</th>
+              <th>Leader</th>
+            </tr>
+          </thead>
+          <tbody id="partyTableBody"></tbody>
+        </table>
       </div>
     </div>
 
-    <!-- ══ VISTA PARLAMENTARE (solo elezioni congressuali) ══ -->
-    <div id="congress-view" style="display:none;">
-
-      <!-- Main grid -->
-      <div class="main-grid">
-        <div class="panel">
-          <div class="panel-head">
-            <div class="panel-icon">🏛</div>
-            <h2>Composizione Parlamento</h2>
-            <span class="badge-count" id="badgeCount">—</span>
-          </div>
-          <div id="parliamentContainer" class="parliament-wrap"></div>
-          <div id="legendContainer" class="parl-legend"></div>
+    <!-- Charts -->
+    <div class="charts-row" style="margin-top:16px;">
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-icon">🥧</div>
+          <h2>Distribuzione Seggi</h2>
         </div>
-        <div class="panel">
-          <div class="panel-head">
-            <div class="panel-icon">📋</div>
-            <h2>Dettaglio Parlamento</h2>
-          </div>
-          <table class="party-table">
-            <thead>
-              <tr>
-                <th>Partito</th>
-                <th style="width:140px">Seggi</th>
-                <th>Iscritti</th>
-                <th>Voti</th> 
-                <th>% seggi</th>
-                <th>Leader</th>
-              </tr>
-            </thead>
-            <tbody id="partyTableBody">
-              <tr>
-                <td colspan="5" class="empty">Nessun dato. Premi Carica.</td>
-              </tr>
-            </tbody>
-          </table>
+        <div class="chart-inner" id="seatsChartWrap">
+          <div class="sk-chart-block"></div>
+          <canvas id="seatsChart" role="img" style="display:none;"></canvas>
         </div>
       </div>
-
-      <!-- Charts -->
-      <div class="charts-row" style="margin-top:16px;">
-        <div class="panel">
-          <div class="panel-head">
-            <div class="panel-icon">🥧</div>
-            <h2>Distribuzione Seggi</h2>
-          </div>
-          <div class="chart-inner"><canvas id="seatsChart" role="img"></canvas></div>
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-icon">📊</div>
+          <h2>Iscritti per Partito — Parlamento</h2>
         </div>
-        <div class="panel">
-          <div class="panel-head">
-            <div class="panel-icon">📊</div>
-            <h2>Iscritti per Partito — Parlamento</h2>
-          </div>
-          <div class="chart-inner"><canvas id="membersChart" role="img"></canvas></div>
+        <div class="chart-inner" id="membersChartWrap">
+          <div class="sk-chart-block"></div>
+          <canvas id="membersChart" role="img" style="display:none;"></canvas>
         </div>
       </div>
+    </div>
 
-      <!-- All parties -->
-      <div class="single-chart-row" style="margin-top:16px;">
-        <div class="panel all-parties-panel">
-          <div class="panel-head">
-            <div class="panel-icon">📊</div>
-            <h2>Tutti i partiti per membri</h2>
-            <span class="badge-count" id="badgeAllParties">—</span>
-          </div>
-          <div class="chart-inner">
-            <canvas id="allPartiesChart" role="img"></canvas>
-          </div>
+    <!-- All parties -->
+    <div class="single-chart-row" style="margin-top:16px;">
+      <div class="panel all-parties-panel">
+        <div class="panel-head">
+          <div class="panel-icon">🗂</div>
+          <h2>Tutti i partiti per membri</h2>
+          <span class="badge-count" id="badgeAllParties">—</span>
+        </div>
+        <div class="ap-chart-outer" id="allPartiesChartWrap">
+          <div class="sk-chart-block" style="height:200px;"></div>
+          <canvas id="allPartiesChart" role="img" style="display:none;"></canvas>
         </div>
       </div>
+    </div>
 
-    </div><!-- /congress-view -->
+  </div><!-- /congress-view -->
 
-  </div><!-- /app -->
+</div><!-- /app -->
 
-  <div class="tooltip" id="tooltip"></div>
-  <script src="parliament.js"></script>
-  <script src="app.js"></script>
+<div class="tooltip" id="tooltip"></div>
+<script src="parliament.js"></script>
+<script src="app.js"></script>
 </body>
-
 </html>

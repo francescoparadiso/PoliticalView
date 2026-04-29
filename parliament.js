@@ -4,11 +4,11 @@ const Parliament = (() => {
     if (nSeats <= 0) return null;
     for (let nRows = 2; nRows <= 12; nRows++) {
       const rowSpan = outerR - innerR;
-      const rowH    = rowSpan / Math.max(nRows - 1, 1);
+      const rowH = rowSpan / Math.max(nRows - 1, 1);
       const dotR = rowH * 0.28;
       const step = dotR * 2 * 1.10;
       const radii = Array.from({ length: nRows }, (_, i) => innerR + rowH * i);
-      const caps  = radii.map(r => Math.max(1, Math.floor(Math.PI * r / step)));
+      const caps = radii.map(r => Math.max(1, Math.floor(Math.PI * r / step)));
       const total = caps.reduce((a, b) => a + b, 0);
       if (total >= nSeats) {
         const rowSeats = _distributePro(nSeats, caps);
@@ -16,11 +16,11 @@ const Parliament = (() => {
       }
     }
     const nRows = 12;
-    const rowH  = (outerR - innerR) / (nRows - 1);
-    const dotR  = rowH * 0.28;
-    const step  = dotR * 2 * 1.10;
+    const rowH = (outerR - innerR) / (nRows - 1);
+    const dotR = rowH * 0.28;
+    const step = dotR * 2 * 1.10;
     const radii = Array.from({ length: nRows }, (_, i) => innerR + rowH * i);
-    const caps  = radii.map(r => Math.max(1, Math.floor(Math.PI * r / step)));
+    const caps = radii.map(r => Math.max(1, Math.floor(Math.PI * r / step)));
     const rowSeats = _distributePro(nSeats, caps);
     return { dotR, radii, rowSeats };
   }
@@ -100,12 +100,12 @@ const Parliament = (() => {
         if (idx >= pts.length) break;
         colored.push({
           ...pts[idx],
-          party:    party.name,
-          color:    party.color,
-          seatIdx:  i,
-          total:    party.seats,
+          party: party.name,
+          color: party.color,
+          seatIdx: i,
+          total: party.seats,
           username: users[i]?.username || null,
-          userId:   users[i]?.userId   || null,
+          userId: users[i]?.userId || null,
           avatarUrl: users[i]?.avatarUrl || null,
         });
         idx++;
@@ -127,15 +127,15 @@ const Parliament = (() => {
         const patternId = 'avatar-' + d.userId;
         const pattern = defs.append('pattern')
           .attr('id', patternId)
-          .attr('patternUnits', 'userSpaceOnUse')
-          .attr('width', layout.dotR * 2)
-          .attr('height', layout.dotR * 2);
-        // Sfondo trasparente, l'immagine riempie il pattern
+          .attr('patternUnits', 'objectBoundingBox')  // fondamentale
+          .attr('width', 1)   // 100% del bounding box
+          .attr('height', 1); // 100% del bounding box
+        // L'immagine copre tutto il pattern
         pattern.append('image')
           .attr('x', 0)
           .attr('y', 0)
-          .attr('width', layout.dotR * 2)
-          .attr('height', layout.dotR * 2)
+          .attr('width', 1)
+          .attr('height', 1)
           .attr('preserveAspectRatio', 'xMidYMid slice')
           .attr('href', d.avatarUrl);
         avatarPatterns[d.avatarUrl] = patternId;
@@ -165,30 +165,41 @@ const Parliament = (() => {
       .attr('font-family', 'Sora, sans-serif')
       .text('50%+1');
 
-    // Dots – due cerchi per avatar + bordo colorato
+    // Dots – cerchio colorato + immagine avatar ritagliata
     svg.selectAll('g.seat-group')
       .data(colored)
       .enter()
       .append('g')
       .attr('class', 'seat-group')
       .attr('transform', d => `translate(${cx + d.radius * Math.cos(d.angle)}, ${cy + d.radius * Math.sin(d.angle)})`)
-      .each(function(d) {
+      .each(function (d) {
         const g = d3.select(this);
-        // Anello esterno colorato (bordo partito)
+        // Cerchio esterno colorato (bordo partito)
         g.append('circle')
           .attr('r', layout.dotR)
           .attr('fill', d.color)
-          .attr('stroke', '#07090d')
-          .attr('stroke-width', 2);
-        // Se c'è avatar, disegna un cerchio interno con l'immagine
+          .attr('stroke', d => d.color)
+          .attr('stroke-width', 3.5);
+
         if (d.avatarUrl) {
-          const patternId = avatarPatterns[d.avatarUrl];
-          if (patternId) {
-            g.append('circle')
-              .attr('r', layout.dotR - 4)
-              .attr('fill', `url(#${patternId})`)
-              .attr('stroke', 'none');
-          }
+          // Definisci un clipPath per ritagliare l'immagine in un cerchio
+          const clipId = 'clip-' + d.userId + '-' + Math.random().toString(36).substr(2, 6);
+          defs.append('clipPath')
+            .attr('id', clipId)
+            .append('circle')
+            .attr('cx', 0)
+            .attr('cy', 0)
+            .attr('r', layout.dotR - 2);
+
+          // Immagine centrata e ritagliata
+          g.append('image')
+            .attr('x', -(layout.dotR - 2))
+            .attr('y', -(layout.dotR - 2))
+            .attr('width', (layout.dotR - 2) * 2)
+            .attr('height', (layout.dotR - 2) * 2)
+            .attr('preserveAspectRatio', 'xMidYMid slice')
+            .attr('href', d.avatarUrl)
+            .attr('clip-path', `url(#${clipId})`);
         }
       })
       .on('mouseover', (event, d) => {
@@ -204,7 +215,7 @@ const Parliament = (() => {
       })
       .on('mousemove', event => {
         tooltip.style.left = (event.clientX + 14) + 'px';
-        tooltip.style.top  = (event.clientY - 36) + 'px';
+        tooltip.style.top = (event.clientY - 36) + 'px';
       })
       .on('mouseout', () => { tooltip.style.opacity = 0; })
       .on('click', (event, d) => {
