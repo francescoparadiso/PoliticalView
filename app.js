@@ -917,7 +917,7 @@ async function loadCongressElection(election) {
 /* ── MAIN ENTRY ── */
 async function loadElection(id) {
   const electionId = id || document.getElementById('electionIdInput').value.trim();
-  if (!electionId) { setStatus('Inserisci un ID elezione', 'error'); return; }
+  if (!electionId) { setStatus('Enter an election ID', 'error'); return; }
 
   if (_pendingRequest) { /* … invariato … */ }
 
@@ -929,7 +929,7 @@ async function loadElection(id) {
   _pendingRequest = {};
   _pendingRequest.timeout = setTimeout(async () => {
     _pendingRequest = null;
-    setStatus('Caricamento elezione…', 'loading');
+    setStatus('Loading election...', 'loading');
 
     try {
       const controller = new AbortController();
@@ -938,23 +938,32 @@ async function loadElection(id) {
       const election = await localFetch('/election', { id: electionId });
       if (!election || !election.candidates) {
         // Invece di lanciare errore, mostra un messaggio e nascondi la vista
-        console.warn('Dettagli elezione non disponibili per ID:', electionId);
+        console.warn('No detail for this ID:', electionId);
         showView('congress'); // o nascondi entrambe?
         hideSkeleton();
-        setStatus('⚠️ Elezione non trovata o dati incompleti.', 'error');
+        setStatus('⚠️ Election not foun or incomplete.', 'error');
         return;
       }
 
-      if (election.type === 'president') await loadPresidentialElection(election);
+     if (election.type === 'president') await loadPresidentialElection(election);
       else if (election.type === 'congress') await loadCongressElection(election);
-      else throw new Error(`Tipo sconosciuto: ${election.type}`);
+      else throw new Error(`Unknown election type: ${election.type}`);
 
-      setStatus('Dati aggiornati', '');
+      setStatus('Updated Data', '');
+      
+      // Traccia il caricamento elezione su Umami
+      if (window.umami) {
+        window.umami.track('election-load', { 
+          electionId: election._id, 
+          type: election.type,
+          countryId: election.country || _currentCountryId 
+        });
+      }
     } catch (err) {
       console.error(err);
       hideSkeleton();
       if (err.message.includes('429')) {
-        setStatus('⚠️ Troppe richieste! Riprova tra qualche secondo.', 'error');
+        setStatus('⚠️ Too mani request! Retry after some seconds.', 'error');
       } else if (err.name !== 'AbortError') {
         setStatus('Errore: ' + err.message, 'error');
       }
@@ -978,24 +987,30 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Event listener per il cambio nazione (non cambia)
-  document.getElementById('countrySelect').addEventListener('change', async function () {
-    const newCountryId = this.value;
-    if (newCountryId === _currentCountryId) return;
+document.getElementById('countrySelect').addEventListener('change', async function () {
+  const newCountryId = this.value;
+  if (newCountryId === _currentCountryId) return;
 
-    _currentCountryId = newCountryId;
-    _electionHistory = [];
-    _currentCongressElectionId = null;
-    // Le mappe colori/nomi NON vengono cancellate
+  _currentCountryId = newCountryId;
 
-    setStatus('Loading…', 'loading');
-    try {
-      await loadPartiesForCountry(_currentCountryId);
-      await loadElectionsHistory();
-    } catch (err) {
-      console.error('Error switching country:', err);
-      setStatus('Error loading data', 'error');
+  _electionHistory = [];
+  _currentCongressElectionId = null;
+
+  setStatus('Loading…', 'loading');
+
+  try {
+    await loadPartiesForCountry(_currentCountryId);
+    await loadElectionsHistory();
+    
+    // Traccia il cambio nazione su Umami
+    if (window.umami) {
+      window.umami.track('country-change', { country: _currentCountryId });
     }
-  });
+  } catch (err) {
+    console.error('Error switching country:', err);
+    setStatus('Error loading data', 'error');
+  }
+});
 
   // Altri listener rimangono uguali
   document.getElementById('loadBtn').addEventListener('click', () => loadElection());
