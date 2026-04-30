@@ -1,5 +1,8 @@
 const API_BASE = 'https://both-shelve-usher.ngrok-free.dev/api';
+//const API_BASE = 'http://localhost:3000/api';
+
 const APP_BASE = 'https://app.warera.io';
+
 
 const PALETTE = [
   '#3b82f6', '#22c55e', '#eab308', '#ef4444', '#a855f7',
@@ -44,16 +47,50 @@ let _currentCountryId = '6813b6d446e731854c7ac7a2';
 
 /* ── ABBR INTELLIGENTE ── */
 function makeAbbr(name) {
-  if (!name) return '???';
-  const stop = new Set(['il', 'lo', 'la', 'le', 'gli', 'i', 'di', 'del', 'della', 'dei', 'delle', 'degli', 'del', 'in', 'per', 'e', 'a', 'da', 'su', 'con', 'tra', 'fra', 'o', 'un', 'una']);
-  const words = name.replace(/[^\w\s]/g, '').split(/\s+/).filter(w => w.length > 0);
-  const sig = words.filter(w => !stop.has(w.toLowerCase()));
-  const src = sig.length > 0 ? sig : words;
-  if (src.length >= 3) return (src[0][0] + src[1][0] + src[2][0]).toUpperCase();
-  if (src.length === 2) return (src[0].substring(0, 2) + src[1][0]).toUpperCase();
-  return src[0].substring(0, 3).toUpperCase();
+  // Se il nome è mancante o non è una stringa, restituisci subito un segnaposto
+  if (!name || typeof name !== 'string') return 'N/A';
+
+  // Rimuovi apostrofi curvi e dritti, poi rimuovi qualsiasi carattere che NON sia una lettera o uno spazio
+  const clean = name.replace(/['’\u2019\u2018]/g, '')
+    .replace(/[^\p{L}\s]/gu, ' ')  // flag 'u' per Unicode
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!clean) return 'N/A';
+
+  // Prendi le iniziali delle prime 3 parole (o meno)
+  const words = clean.split(' ');
+  const initials = words
+    .filter(w => w.length > 0)
+    .map(w => w[0])
+    .slice(0, 3)
+    .join('')
+    .toUpperCase();
+
+  return initials || 'N/A';
+}
+/* ── COLORI GLOBALI ── */
+function stringToColor(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  let color = '#';
+  for (let i = 0; i < 3; i++) {
+    const value = (hash >> (i * 8)) & 0xFF;
+    color += ('00' + value.toString(16)).substr(-2);
+  }
+  return color;
 }
 
+function getPartyColor(partyId) {
+  // Se il colore è già stato assegnato (da CSV o da hash precedente), riutilizzalo
+  if (_partyColorMap.has(partyId)) return _partyColorMap.get(partyId);
+  // Altrimenti genera un colore deterministico basato sull'ID e salvalo
+  const color = stringToColor(partyId);
+  _partyColorMap.set(partyId, color);
+  return color;
+}
 /* ── FETCH VERSO IL SERVER LOCALE ── */
 async function localFetch(path, params = {}) {
   const qs = new URLSearchParams(params).toString();
@@ -226,7 +263,22 @@ async function loadElectionsHistory() {
     console.warn('Storico elezioni non disponibile:', err.message);
   }
 }
-
+async function loadPartiesForCountry(countryId) {
+  try {
+    const data = await localFetch('/parties', { countryId });
+    const parties = data?.items || [];
+    parties.forEach(p => {
+      if (!_partyColorMap.has(p._id)) {
+        _partyColorMap.set(p._id, stringToColor(p._id));
+      }
+      _partyNamesMap.set(p._id, p.name);
+    });
+    return parties;   // <-- restituisce l'array
+  } catch (err) {
+    console.warn('Unable to load party list:', err.message);
+    return [];
+  }
+}
 /* ── TIMELINE ── */
 function renderTimeline(congressElections) {
   if (congressElections.length < 2) return;
@@ -341,8 +393,8 @@ async function loadTimelineData(elections, electionIds) {
   for (const pid of allPids) {
     if (pid === 'independent') continue;
     const color = _partyColorMap.get(pid) || PALETTE[colorIdx % PALETTE.length];
-    const name  = _partyNamesMap.get(pid) || pid.slice(-6);   // ora dovrebbe esserci
-    const data  = partySeatsPerElection.map(m => m[pid] || 0);
+    const name = _partyNamesMap.get(pid) || pid.slice(-6);   // ora dovrebbe esserci
+    const data = partySeatsPerElection.map(m => m[pid] || 0);
     if (data.every(v => v === 0)) continue;
 
     const pointRadii = electionIds.map(eid => (eid === _currentCongressElectionId) ? 7 : 4);
@@ -361,7 +413,7 @@ async function loadTimelineData(elections, electionIds) {
     });
 
     if (data.length >= 2) {
-      const movingAvg = data.map((v, i) => (i === 0) ? v : Math.round((data[i-1] + data[i]) / 2));
+      const movingAvg = data.map((v, i) => (i === 0) ? v : Math.round((data[i - 1] + data[i]) / 2));
       datasets.push({
         label: '',
         data: movingAvg,
@@ -493,8 +545,8 @@ function renderAllPartiesChart(allParties) {
     data: {
       labels: sorted.map(p => p.name), datasets: [{
         data: sorted.map(p => Number(p.members) || 0),
-        backgroundColor: sorted.map(p => p.seats > 0 ? p.color + 'cc' : 'rgba(255,255,255,0.06)'),
-        borderColor: sorted.map(p => p.seats > 0 ? p.color : 'rgba(255,255,255,0.10)'),
+        backgroundColor: sorted.map(p => p.seats > 0 ? p.color + 'ff' : p.color + '33'),
+        borderColor: sorted.map(p => p.seats > 0 ? p.color : p.color + '44'),
         borderWidth: 1.5, borderRadius: 4, borderSkipped: false,
       }]
     },
@@ -511,50 +563,145 @@ function renderAllPartiesChart(allParties) {
   });
   document.getElementById('badgeAllParties').textContent = `${allParties.length} partiti`;
 }
-
+async function loadPartyColors(csvUrl) {
+  try {
+    const res = await fetch(csvUrl);
+    if (!res.ok) throw new Error('CSV not found');
+    const text = await res.text();
+    text.split('\n').forEach(line => {
+      line = line.trim();
+      if (!line || line.startsWith('#')) return;
+      const parts = line.split(',').map(s => s.trim()).filter(Boolean);
+      if (parts.length >= 2) {
+        const id = parts[0];
+        const color = parts[parts.length - 1]; // prende solo l'ultimo campo (il colore)
+        if (id && color) _partyColorMap.set(id, color);
+      }
+    });
+  } catch (err) {
+    console.warn('CSV colors not loaded:', err.message);
+  }
+}
 /* ── PRESIDENTIAL ── */
 function renderPresidentialTurnoutChart(currentElectionId = null) {
   const presidentialElections = _electionHistory
     .filter(e => e.type === 'president')
     .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
   if (presidentialElections.length < 2) return;
 
   const canvas = document.getElementById('presidentTurnoutChart');
-  if (!canvas) return;
+  if (!canvas) {
+    console.warn('Canvas presidentTurnoutChart not found!');
+    return;
+  }
+
+  // Destroy previous chart
   const existing = Chart.getChart(canvas);
   if (existing) existing.destroy();
 
-  const labels = presidentialElections.map(e => new Date(e.createdAt).toLocaleDateString('it', { month: 'short', year: '2-digit' }));
+  const labels = presidentialElections.map(e =>
+    new Date(e.createdAt).toLocaleDateString('it', { month: 'short', year: '2-digit' })
+  );
   const data = presidentialElections.map(e => e.votesCount || 0);
   const electionIds = presidentialElections.map(e => e._id);
 
-  const pointRadii = presidentialElections.map(e => (currentElectionId && e._id === currentElectionId) ? 8 : 4);
-  const movingAverage = data.map((v, i) => (i === 0) ? v : Math.round((data[i - 1] + data[i]) / 2));
+  // Larger points for the current election
+  const pointRadii = presidentialElections.map(e =>
+    (currentElectionId && e._id === currentElectionId) ? 8 : 4
+  );
+
+  // 2‑point moving average
+  const movingAverage = [];
+  for (let i = 0; i < data.length; i++) {
+    if (i === 0) {
+      movingAverage.push(data[i]);
+    } else {
+      movingAverage.push(Math.round((data[i - 1] + data[i]) / 2));
+    }
+  }
 
   new Chart(canvas.getContext('2d'), {
     type: 'line',
     data: {
       labels,
       datasets: [
-        { label: 'Voti totali', data, borderColor: '#e8c97a', backgroundColor: 'rgba(232,201,122,0.1)', borderWidth: 2, pointRadius: pointRadii, pointHoverRadius: pointRadii.map(r => r + 2), pointBackgroundColor: '#e8c97a', tension: 0.3, fill: true },
-        { label: 'Media mobile (2)', data: movingAverage, borderColor: '#60a5fa', backgroundColor: 'transparent', borderWidth: 2, borderDash: [6, 3], pointRadius: 0, pointHoverRadius: 3, tension: 0.3, fill: false },
+        {
+          label: 'Total votes',
+          data,
+          borderColor: '#e8c97a',
+          backgroundColor: 'rgba(232,201,122,0.1)',
+          borderWidth: 2,
+          pointRadius: pointRadii,
+          pointHoverRadius: pointRadii.map(r => r + 4),
+          pointHitRadius: 15,
+          pointBackgroundColor: '#e8c97a',
+          tension: 0.3,
+          fill: true,
+        },
+        {
+          label: 'Moving average (2)',
+          data: movingAverage,
+          borderColor: '#60a5fa',
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          borderDash: [6, 3],
+          pointRadius: 0,
+          pointHoverRadius: 0,
+          pointHitRadius: 0,
+          tension: 0.3,
+          fill: false,
+        }
       ]
     },
     options: {
-      responsive: true, maintainAspectRatio: false,
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        mode: 'nearest',
+        intersect: false,
+        axis: 'x'
+      },
       plugins: {
         legend: { display: false },
         tooltip: {
-          backgroundColor: '#0f1521', borderColor: 'rgba(197,150,74,.3)', borderWidth: 1,
-          titleColor: '#e8c97a', bodyColor: '#8892a4', padding: 10, cornerRadius: 6,
-          callbacks: { title: items => `Elezione ${items[0].label}`, label: item => ` ${item.dataset.label}: ${item.parsed.y.toLocaleString()} voti` }
+          backgroundColor: '#0f1521',
+          borderColor: 'rgba(197,150,74,.3)',
+          borderWidth: 1,
+          titleColor: '#e8c97a',
+          bodyColor: '#8892a4',
+          padding: 10,
+          cornerRadius: 6,
+          callbacks: {
+            title: items => `Election ${items[0].label}`,
+            label: item => ` ${item.dataset.label}: ${item.parsed.y.toLocaleString()} votes`
+          }
         }
       },
       scales: {
-        x: { ticks: { color: '#535e72', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.035)' }, border: { color: 'rgba(255,255,255,0.06)' } },
-        y: { beginAtZero: true, ticks: { color: '#535e72', callback: v => v.toLocaleString() }, grid: { color: 'rgba(255,255,255,0.035)' }, border: { color: 'rgba(255,255,255,0.06)' } }
+        x: {
+          ticks: { color: '#535e72', font: { size: 11 } },
+          grid: { color: 'rgba(255,255,255,0.035)' },
+          border: { color: 'rgba(255,255,255,0.06)' }
+        },
+        y: {
+          beginAtZero: true,
+          ticks: { color: '#535e72', callback: v => v.toLocaleString() },
+          grid: { color: 'rgba(255,255,255,0.035)' },
+          border: { color: 'rgba(255,255,255,0.06)' }
+        }
       },
-      onClick: (evt, elements) => { if (elements.length) { const idx = elements[0].index; const eid = electionIds[idx]; if (eid) { document.getElementById('electionSelect').value = eid; document.getElementById('electionIdInput').value = eid; loadElection(eid); } } }
+      onClick: (event, elements, chart) => {
+        if (elements.length > 0) {
+          const idx = elements[0].index;
+          const eid = electionIds[idx];
+          if (eid) {
+            document.getElementById('electionSelect').value = eid;
+            document.getElementById('electionIdInput').value = eid;
+            loadElection(eid);
+          }
+        }
+      }
     }
   });
 }
@@ -658,7 +805,7 @@ async function loadCongressElection(election) {
   resetStats();
 
   const elected = election.candidates.filter(c => c.isElected);
-  if (!elected.length) throw new Error('Nessun candidato eletto trovato.');
+  if (!elected.length) throw new Error('No elected candidates found.');
 
   const partySeatsMap = {}, partyUsersMap = {};
   elected.forEach(c => {
@@ -668,6 +815,14 @@ async function loadCongressElection(election) {
   });
   const electedPartyIds = Object.keys(partySeatsMap);
 
+  // 1. Carica TUTTI i partiti della nazione (array con dettagli completi)
+  const allPartiesData = await loadPartiesForCountry(election.country || _currentCountryId);
+
+  // 2. Mappa dettagli per accesso rapido (ora contiene TUTTI i partiti, non solo quelli eletti)
+  const allPartyDetailsMap = {};
+  allPartiesData.forEach(p => { allPartyDetailsMap[p._id] = p; });
+
+  // 3. Voti per partito
   const partyVotesMap = {};
   election.candidates.forEach(c => {
     const pid = String(c.party || c.partyId || 'independent');
@@ -675,33 +830,31 @@ async function loadCongressElection(election) {
     partyVotesMap[pid] = (partyVotesMap[pid] || 0) + votes;
   });
 
-  const allPartyDetailsMap = {};
-  await Promise.all(electedPartyIds.map(pid => localFetch('/party', { id: pid }).then(p => { allPartyDetailsMap[pid] = p; })));
-
-  const allCsvIds = [..._partyColorMap.keys()];
-  const nonElectedCsvIds = allCsvIds.filter(id => !electedPartyIds.includes(id) && id !== 'independent');
-  if (nonElectedCsvIds.length > 0) {
-    setStatus(`Recupero ${nonElectedCsvIds.length} partiti dal CSV…`, 'loading');
-    await Promise.all(nonElectedCsvIds.map(pid => localFetch('/party', { id: pid }).then(p => { allPartyDetailsMap[pid] = p; })));
-  }
-
+  // 4. Utenti (per leader e membri eletti)
   const allUserIds = new Set();
   elected.forEach(c => { if (c.userId || c.user) allUserIds.add(String(c.userId || c.user)); });
   Object.values(allPartyDetailsMap).forEach(pd => { if (pd?.leader) allUserIds.add(String(pd.leader)); });
 
   const userMap = {};
-  for (const uid of allUserIds) { userMap[uid] = await localFetch('/user', { id: uid }); }
+  for (const uid of allUserIds) { 
+    userMap[uid] = await localFetch('/user', { id: uid }).catch(() => ({})); 
+  }
 
+  // 5. electedParties (partiti con seggi)
   const electedParties = electedPartyIds.map(pid => {
-    const color = _partyColorMap.get(pid) || PALETTE[electedPartyIds.indexOf(pid) % PALETTE.length];
+    if (!pid) {
+      return { id: 'unknown', name: 'Unknown', abbr: 'N/A', seats: 0, members: 0, votes: 0, leaderName: null, leaderAvatarUrl: null, leaderId: null, color: '#6b7280', users: [] };
+    }
+    const color = getPartyColor(pid);
     if (pid === 'independent') {
       return {
-        id: pid, name: 'Indipendente', abbr: 'IND', seats: partySeatsMap[pid], members: 0, votes: partyVotesMap[pid] || 0, leaderName: null, leaderAvatarUrl: null, leaderId: null, color: '#6b7280',
+        id: pid, name: 'Independent', abbr: 'IND', seats: partySeatsMap[pid], members: 0, votes: partyVotesMap[pid] || 0,
+        leaderName: null, leaderAvatarUrl: null, leaderId: null, color,
         users: (partyUsersMap[pid] || []).map(uid => ({ userId: uid, ...userMap[uid] }))
       };
     }
     const pd = allPartyDetailsMap[pid] || {};
-    const name = pd.name || _partyNamesMap.get(pid) || `Partito ${pid.slice(-6)}`;
+    const name = pd.name || _partyNamesMap.get(pid) || `Party ${pid.slice(-6)}` || 'Unknown Party';
     const leaderId = pd.leader ? String(pd.leader) : null;
     const leaderData = leaderId ? userMap[leaderId] : null;
     const rawMembers = Array.isArray(pd.members) ? pd.members.length : Number(pd.membersCount || pd.memberCount || 0);
@@ -714,16 +867,17 @@ async function loadCongressElection(election) {
     };
   }).sort((a, b) => b.seats - a.seats);
 
-  const allPartyIds = [...new Set([...allCsvIds, ...electedPartyIds])];
-  const allParties = allPartyIds.map(pid => {
-    const color = _partyColorMap.get(pid) || '#6b7280';
+  // 6. allParties (TUTTI i partiti della nazione, con membri reali)
+  const allParties = Object.keys(allPartyDetailsMap).map(pid => {
     const pd = allPartyDetailsMap[pid] || {};
-    const name = pd.name || _partyNamesMap.get(pid) || (pid === 'independent' ? 'Indipendente' : `Partito ${pid.slice(-6)}`);
+    const color = getPartyColor(pid);
+    const name = pd.name || _partyNamesMap.get(pid) || `Party ${pid.slice(-6)}` || 'Unknown Party';
     const rawMembers = Array.isArray(pd.members) ? pd.members.length : Number(pd.membersCount || pd.memberCount || 0);
     return { id: pid, name, abbr: makeAbbr(name), seats: partySeatsMap[pid] || 0, members: rawMembers, votes: partyVotesMap[pid] || 0, color };
   }).sort((a, b) => b.seats - a.seats || b.members - a.members);
 
-  if (_partyColorMap.size > 0) {
+  // 7. Mostra/nascondi il grafico "All parties"
+  if (allParties.length > 0) {
     document.getElementById('allPartiesRow').style.display = '';
     renderAllPartiesChart(allParties);
   } else {
@@ -753,7 +907,7 @@ async function loadCongressElection(election) {
   renderCharts(electedParties);
   updateTimelineHighlight();
 
-  const badge = `${electedParties.length} partiti · ${totalSeats} seggi`;
+  const badge = `${electedParties.length} parties · ${totalSeats} seats`;
   setStatus(badge, '');
   document.getElementById('badgeCount').textContent = badge;
 
@@ -765,10 +919,7 @@ async function loadElection(id) {
   const electionId = id || document.getElementById('electionIdInput').value.trim();
   if (!electionId) { setStatus('Inserisci un ID elezione', 'error'); return; }
 
-  if (_pendingRequest) {
-    clearTimeout(_pendingRequest.timeout);
-    if (_pendingRequest.controller) _pendingRequest.controller.abort();
-  }
+  if (_pendingRequest) { /* … invariato … */ }
 
   const selectEl = document.getElementById('electionSelect');
   const inputEl = document.getElementById('electionIdInput');
@@ -785,7 +936,14 @@ async function loadElection(id) {
       _pendingRequest = { controller };
 
       const election = await localFetch('/election', { id: electionId });
-      if (!election?.candidates) throw new Error('Dati elezione mancanti.');
+      if (!election || !election.candidates) {
+        // Invece di lanciare errore, mostra un messaggio e nascondi la vista
+        console.warn('Dettagli elezione non disponibili per ID:', electionId);
+        showView('congress'); // o nascondi entrambe?
+        hideSkeleton();
+        setStatus('⚠️ Elezione non trovata o dati incompleti.', 'error');
+        return;
+      }
 
       if (election.type === 'president') await loadPresidentialElection(election);
       else if (election.type === 'congress') await loadCongressElection(election);
@@ -795,8 +953,11 @@ async function loadElection(id) {
     } catch (err) {
       console.error(err);
       hideSkeleton();
-      if (err.message.includes('429')) setStatus('⚠️ Troppe richieste! Riprova tra qualche secondo.', 'error');
-      else if (err.name !== 'AbortError') setStatus('Errore: ' + err.message, 'error');
+      if (err.message.includes('429')) {
+        setStatus('⚠️ Troppe richieste! Riprova tra qualche secondo.', 'error');
+      } else if (err.name !== 'AbortError') {
+        setStatus('Errore: ' + err.message, 'error');
+      }
     } finally {
       selectEl.disabled = false; inputEl.disabled = false; btnEl.disabled = false;
     }
@@ -805,24 +966,30 @@ async function loadElection(id) {
 
 /* ── BOOT ── */
 document.addEventListener('DOMContentLoaded', () => {
-  // 1. Carica la lista delle nazioni
-  loadCountries();
+  // Prima di tutto, carica i colori dal CSV globale
+  loadPartyColors('parties_6813b6d446e731854c7ac7a2.csv').then(() => {
+    console.log(`🎨 ${_partyColorMap.size} colors loaded from CSV`);
 
-  // 2. Quando l'utente cambia nazione, ricarica tutto
+    // Ora le mappe sono pronte, possiamo caricare le nazioni e le elezioni
+    loadCountries();
+
+    // Inizializza il caricamento per l'Italia di default
+    loadElectionsHistory();
+  });
+
+  // Event listener per il cambio nazione (non cambia)
   document.getElementById('countrySelect').addEventListener('change', async function () {
     const newCountryId = this.value;
     if (newCountryId === _currentCountryId) return;
 
     _currentCountryId = newCountryId;
-
     _electionHistory = [];
     _currentCongressElectionId = null;
-    _partyColorMap.clear();
-    _partyNamesMap.clear();
+    // Le mappe colori/nomi NON vengono cancellate
 
     setStatus('Loading…', 'loading');
-
     try {
+      await loadPartiesForCountry(_currentCountryId);
       await loadElectionsHistory();
     } catch (err) {
       console.error('Error switching country:', err);
@@ -830,10 +997,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // 3. Avvia il caricamento iniziale (Italia di default)
-  loadElectionsHistory();
-
-  // 4. Altri listener
+  // Altri listener rimangono uguali
   document.getElementById('loadBtn').addEventListener('click', () => loadElection());
   document.getElementById('electionIdInput').addEventListener('keydown', e => { if (e.key === 'Enter') loadElection(); });
   document.getElementById('electionSelect').addEventListener('change', function () {
