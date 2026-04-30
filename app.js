@@ -9,7 +9,30 @@ const PALETTE = [
   '#f97316', '#06b6d4', '#ec4899', '#84cc16', '#f43f5e',
   '#6366f1', '#14b8a6', '#d946ef', '#0ea5e9', '#f59e0b',
 ];
+/* ── CACHE localStorage ── */
+const CACHE_TTL_SHORT = 3 * 60 * 1000;   // 3 min per elezioni recenti
+const CACHE_TTL_LONG  = 60 * 60 * 1000;  // 1 ora per elezioni concluse
 
+function cacheKey(path, params) {
+  return 'we_' + path + '_' + JSON.stringify(params);
+}
+function cacheGet(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const { data, ts, ttl } = JSON.parse(raw);
+    if (Date.now() - ts > ttl) { localStorage.removeItem(key); return null; }
+    return data;
+  } catch (_) { return null; }
+}
+function cacheSet(key, data, ttl) {
+  try { localStorage.setItem(key, JSON.stringify({ data, ts: Date.now(), ttl })); } catch (_) {}
+}
+function cacheClear() {
+  try {
+    Object.keys(localStorage).filter(k => k.startsWith('we_')).forEach(k => localStorage.removeItem(k));
+  } catch (_) {}
+}
 /* ── PLUGIN centerText ── */
 const centerTextPlugin = {
   id: 'centerText',
@@ -92,16 +115,27 @@ function getPartyColor(partyId) {
   return color;
 }
 /* ── FETCH VERSO IL SERVER LOCALE ── */
-async function localFetch(path, params = {}) {
+async function localFetch(path, params = {}, { useCache = true, ttl = null } = {}) {
+  const key = cacheKey(path, params);
+  if (useCache) {
+    const cached = cacheGet(key);
+    if (cached) return cached;
+  }
   const qs = new URLSearchParams(params).toString();
   const url = `${API_BASE}${path}${qs ? '?' + qs : ''}`;
   const headers = {
     ...(_apiKey && { Authorization: `Bearer ${_apiKey}` }),
-    'ngrok-skip-browser-warning': 'true'  // ← aggiungi questa riga
+    'ngrok-skip-browser-warning': 'true'
   };
   const res = await fetch(url, { headers });
   if (!res.ok) throw new Error(`HTTP ${res.status} → ${path}`);
-  return await res.json();
+  const json = await res.json();
+  // Determina TTL: breve per elezioni in corso, lungo per dati stabili
+  if (useCache) {
+    const autoTtl = ttl ?? (path === '/election' ? CACHE_TTL_SHORT : CACHE_TTL_LONG);
+    cacheSet(key, json, autoTtl);
+  }
+  return json;
 }
 
 /* ── HELPERS ── */
@@ -124,6 +158,8 @@ function resetStats() {
     el.classList.add('skeleton-val');
     el.classList.remove('loaded');
   });
+  const enpLabel = document.getElementById('stat-enp-label');
+  if (enpLabel) { enpLabel.textContent = '—'; enpLabel.style.color = ''; }
 }
 function safeDestroy(canvasId) {
   const existing = Chart.getChart(canvasId);
@@ -231,6 +267,69 @@ async function loadCountries() {
   }
 }
 
+/* ── EXPORT CSV ── */
+function exportCSV(parties, filename = 'parliament.csv') {
+  if (!parties || !parties.length) { alert('No data to export.'); return; }
+  const headers = ['Party', 'Abbr', 'Seats', 'Members', 'Votes', 'Seat %', 'Leader', 'Color'];
+  const totalSeats = parties.reduce((s, p) => s + p.seats, 0);
+  const rows = parties.map(p => [
+    `"${p.name.replace(/"/g, '""')}"`,
+    p.abbr,
+    p.seats,
+    p.members,
+    p.votes,
+    totalSeats ? ((p.seats / totalSeats) * 100).toFixed(2) : 0,
+    `"${(p.leaderName || '').replace(/"/g, '""')}"`,
+    p.color,
+  ]);
+  const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function openParliamentFullscreen() {
+  const container = document.getElementById('parliamentContainer');
+  const overlay = document.getElementById('parliamentOverlay');
+  const dest = document.getElementById('parliamentOverlayContent');
+  if (!container || !overlay || !dest) return;
+
+  const svg = container.querySelector('svg');
+  if (!svg) return;
+
+  // Salva i riferimenti per poterlo rimettere a posto
+  overlay._svg = svg;
+  overlay._originalParent = svg.parentNode;
+
+  // Sposta il SVG nell'overlay
+  dest.innerHTML = '';
+  svg.style.width = '100%';
+  svg.style.height = '100%';
+  dest.appendChild(svg);
+
+  overlay.classList.add('active');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeParliamentFullscreen() {
+  const overlay = document.getElementById('parliamentOverlay');
+  if (!overlay) return;
+
+  overlay.classList.remove('active');
+  document.body.style.overflow = '';
+
+  // Riporta il SVG al container originale
+  if (overlay._svg && overlay._originalParent) {
+    overlay._svg.style.width = '';
+    overlay._svg.style.height = '';
+    overlay._originalParent.appendChild(overlay._svg);
+    overlay._svg = null;
+    overlay._originalParent = null;
+  }
+}
 /* ── STORICO ELEZIONI + TIMELINE ── */
 async function loadElectionsHistory() {
   try {
@@ -422,7 +521,7 @@ async function loadTimelineData(elections, electionIds) {
         borderWidth: 1.5,
         borderDash: [4, 3],
         pointRadius: 0,
-        pointHoverRadius: 0,
+        pointHoverRadius: 3,
         tension: 0.3,
         fill: false,
       });
@@ -647,7 +746,7 @@ function renderPresidentialTurnoutChart(currentElectionId = null) {
           borderWidth: 2,
           borderDash: [6, 3],
           pointRadius: 0,
-          pointHoverRadius: 0,
+          pointHoverRadius: 3,
           pointHitRadius: 0,
           tension: 0.3,
           fill: false,
@@ -773,7 +872,30 @@ async function loadPresidentialElection(election) {
       </div>
     </div>`;
   }).join('');
-
+  // Collasso automatico se ci sono più di 8 candidati
+  const threshold = 6;
+  const raceDiv = document.getElementById('pres-race');
+  if (candidates.length > threshold) {
+    const rows = raceDiv.querySelectorAll('.race-row');
+    // Nasconde tutte le righe oltre la soglia
+    rows.forEach((row, i) => {
+      if (i >= threshold) {
+        row.style.display = 'none';
+        row.classList.add('collapsed-candidate');
+      }
+    });
+    // Pulsante per mostrare/nascondere
+    const toggleBtn = document.createElement('button');
+    toggleBtn.className = 'race-toggle-btn';
+    toggleBtn.textContent = `Show more (${candidates.length})`;
+    toggleBtn.addEventListener('click', () => {
+      const hiddenRows = raceDiv.querySelectorAll('.collapsed-candidate');
+      const areHidden = hiddenRows[0]?.style.display === 'none';
+      hiddenRows.forEach(r => r.style.display = areHidden ? '' : 'none');
+      toggleBtn.textContent = areHidden ? 'Show less' : `Show more (${candidates.length})`;
+    });
+    raceDiv.appendChild(toggleBtn);
+  }
   safeDestroy('presidentChart');
   _presidentChart = new Chart(document.getElementById('presidentChart').getContext('2d'), {
     type: 'bar',
@@ -892,6 +1014,21 @@ async function loadCongressElection(election) {
   fillStat('stat-elected', elected.length);
   fillStat('stat-majority', majority);
   fillStat('stat-leader', electedParties[0]?.name || '—');
+  // Effective Number of Parties (Laakso-Taagepera)
+  const enp = (() => {
+    const sumSq = electedParties.reduce((s, p) => {
+      const share = p.seats / totalSeats;
+      return s + share * share;
+    }, 0);
+    return sumSq > 0 ? (1 / sumSq).toFixed(2) : '—';
+  })();
+  fillStat('stat-enp', enp);
+  const enpEl = document.getElementById('stat-enp-label');
+  if (enpEl) {
+    const v = parseFloat(enp);
+    enpEl.textContent = v <= 2.5 ? 'Bipolar' : v <= 4 ? 'Multyparty' : 'Fragmented';
+    enpEl.style.color = v <= 2.5 ? '#22c55e' : v <= 4 ? '#eab308' : '#ef4444';
+  }
 
   await new Promise(resolve => requestAnimationFrame(resolve));
   hideSkeleton();
@@ -910,7 +1047,7 @@ async function loadCongressElection(election) {
   const badge = `${electedParties.length} parties · ${totalSeats} seats`;
   setStatus(badge, '');
   document.getElementById('badgeCount').textContent = badge;
-
+  window._lastElectedParties = electedParties;   // ← per CSV export
   electedParties.forEach(p => _partyNamesMap.set(p.id, p.name));
 }
 
@@ -974,51 +1111,68 @@ async function loadElection(id) {
 }
 
 /* ── BOOT ── */
+/* ── BOOT ── */
 document.addEventListener('DOMContentLoaded', () => {
-  // Prima di tutto, carica i colori dal CSV globale
+  // 1. Carica i colori dal CSV globale
   loadPartyColors('parties_6813b6d446e731854c7ac7a2.csv').then(() => {
     console.log(`🎨 ${_partyColorMap.size} colors loaded from CSV`);
-
-    // Ora le mappe sono pronte, possiamo caricare le nazioni e le elezioni
     loadCountries();
-
-    // Inizializza il caricamento per l'Italia di default
     loadElectionsHistory();
   });
 
-  // Event listener per il cambio nazione (non cambia)
-document.getElementById('countrySelect').addEventListener('change', async function () {
-  const newCountryId = this.value;
-  if (newCountryId === _currentCountryId) return;
+  // 2. Listener cambio nazione
+  document.getElementById('countrySelect').addEventListener('change', async function () {
+    const newCountryId = this.value;
+    if (newCountryId === _currentCountryId) return;
 
-  _currentCountryId = newCountryId;
+    _currentCountryId = newCountryId;
+    _electionHistory = [];
+    _currentCongressElectionId = null;
+    _partyColorMap.clear();       // opzionale ma consigliato
+    _partyNamesMap.clear();
 
-  _electionHistory = [];
-  _currentCongressElectionId = null;
+    setStatus('Loading…', 'loading');
 
-  setStatus('Loading…', 'loading');
+    try {
+      await loadPartiesForCountry(_currentCountryId);
+      await loadElectionsHistory();
 
-  try {
-    await loadPartiesForCountry(_currentCountryId);
-    await loadElectionsHistory();
-    
-    // Traccia il cambio nazione su Umami
-    if (window.umami) {
-      window.umami.track('country-change', { country: _currentCountryId });
+      if (window.umami) {
+        window.umami.track('country-change', { country: _currentCountryId });
+      }
+    } catch (err) {
+      console.error('Error switching country:', err);
+      setStatus('Error loading data', 'error');
     }
-  } catch (err) {
-    console.error('Error switching country:', err);
-    setStatus('Error loading data', 'error');
-  }
-});
+  });
 
-  // Altri listener rimangono uguali
+  // 3. Listener per il caricamento elezioni
   document.getElementById('loadBtn').addEventListener('click', () => loadElection());
-  document.getElementById('electionIdInput').addEventListener('keydown', e => { if (e.key === 'Enter') loadElection(); });
+  document.getElementById('electionIdInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') loadElection();
+  });
   document.getElementById('electionSelect').addEventListener('change', function () {
     if (this.value) {
       document.getElementById('electionIdInput').value = this.value;
       loadElection(this.value);
     }
+  });
+
+  // 4. Listener per export / fullscreen (una volta sola)
+  document.getElementById('exportCsvBtn')?.addEventListener('click', () => exportCSV(window._lastElectedParties));
+  document.getElementById('fullscreenBtn')?.addEventListener('click', openParliamentFullscreen);
+  document.getElementById('overlayClose')?.addEventListener('click', closeParliamentFullscreen);
+  document.getElementById('parliamentOverlay')?.addEventListener('click', e => {
+    if (e.target === document.getElementById('parliamentOverlay')) closeParliamentFullscreen();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeParliamentFullscreen();
+  });
+
+  // 5. Clear cache
+  document.getElementById('clearCacheBtn')?.addEventListener('click', () => {
+    cacheClear();
+    setStatus('Cache cleared', '');
+    setTimeout(() => setStatus('', ''), 2000);
   });
 });

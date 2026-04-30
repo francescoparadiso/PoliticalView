@@ -167,62 +167,76 @@ const Parliament = (() => {
 
     // Dots – cerchio colorato + immagine avatar ritagliata
     svg.selectAll('g.seat-group')
-      .data(colored)
-      .enter()
-      .append('g')
-      .attr('class', 'seat-group')
-      .attr('transform', d => `translate(${cx + d.radius * Math.cos(d.angle)}, ${cy + d.radius * Math.sin(d.angle)})`)
-      .each(function (d) {
-        const g = d3.select(this);
-        // Cerchio esterno colorato (bordo partito)
-        g.append('circle')
-          .attr('r', layout.dotR)
-          .attr('fill', d.color)
-          .attr('stroke', d => d.color)
-          .attr('stroke-width', 3.5);
+  .data(colored)
+  .enter()
+  .append('g')
+  .attr('class', 'seat-group')
+  .attr('transform', d => `translate(${cx + d.radius * Math.cos(d.angle)}, ${cy + d.radius * Math.sin(d.angle)})`)
+  .each(function (d) {
+    const mainGroup = d3.select(this);
+    // Sotto-gruppo che verrà scalato
+    const inner = mainGroup.append('g').attr('class', 'seat-inner');
 
-        if (d.avatarUrl) {
-          // Definisci un clipPath per ritagliare l'immagine in un cerchio
-          const clipId = 'clip-' + d.userId + '-' + Math.random().toString(36).substr(2, 6);
-          defs.append('clipPath')
-            .attr('id', clipId)
-            .append('circle')
-            .attr('cx', 0)
-            .attr('cy', 0)
-            .attr('r', layout.dotR - 2);
+    // Cerchio colorato
+    inner.append('circle')
+      .attr('r', layout.dotR)
+      .attr('fill', d.color)
+      .attr('stroke', d.color)
+      .attr('stroke-width', 3.5);
 
-          // Immagine centrata e ritagliata
-          g.append('image')
-            .attr('x', -(layout.dotR - 2))
-            .attr('y', -(layout.dotR - 2))
-            .attr('width', (layout.dotR - 2) * 2)
-            .attr('height', (layout.dotR - 2) * 2)
-            .attr('preserveAspectRatio', 'xMidYMid slice')
-            .attr('href', d.avatarUrl)
-            .attr('clip-path', `url(#${clipId})`);
-        }
-      })
-      .on('mouseover', (event, d) => {
-        tooltip.style.opacity = 1;
-        const avatarHtml = d.avatarUrl
-          ? `<img src="${d.avatarUrl}" class="tooltip-avatar">`
-          : '';
-        tooltip.innerHTML = `
-          <div class="tt-party">${d.party}</div>
-          ${d.username ? `<div class="tt-user">${avatarHtml} ${d.username}</div>` : ''}
-          <div class="tt-seat">Seggio ${d.seatIdx + 1} / ${d.total}</div>
-        `;
-      })
-      .on('mousemove', event => {
-        tooltip.style.left = (event.clientX + 14) + 'px';
-        tooltip.style.top = (event.clientY - 36) + 'px';
-      })
-      .on('mouseout', () => { tooltip.style.opacity = 0; })
-      .on('click', (event, d) => {
-        if (d.userId) {
-          window.open(`${APP_BASE}/user/${d.userId}`, '_blank');
-        }
-      });
+    // Avatar (se presente)
+    if (d.avatarUrl) {
+      const clipId = 'clip-' + d.userId + '-' + Math.random().toString(36).substr(2, 6);
+      defs.append('clipPath')
+        .attr('id', clipId)
+        .append('circle')
+        .attr('cx', 0)
+        .attr('cy', 0)
+        .attr('r', layout.dotR - 2);
+
+      inner.append('image')
+        .attr('x', -(layout.dotR - 2))
+        .attr('y', -(layout.dotR - 2))
+        .attr('width', (layout.dotR - 2) * 2)
+        .attr('height', (layout.dotR - 2) * 2)
+        .attr('preserveAspectRatio', 'xMidYMid slice')
+        .attr('href', d.avatarUrl)
+        .attr('clip-path', `url(#${clipId})`);
+    }
+  })
+  .on('mouseover', (event, d) => {
+    // Ingrandisce il gruppo interno (cerchio + avatar)
+    d3.select(event.currentTarget).select('.seat-inner')
+      .transition().duration(150)
+      .attr('transform', 'scale(1.8)');
+
+    // Tooltip
+    tooltip.style.opacity = 1;
+    const avatarHtml = d.avatarUrl
+      ? `<img src="${d.avatarUrl}" class="tooltip-avatar">`
+      : '';
+    tooltip.innerHTML = `
+      <div class="tt-party">${d.party}</div>
+      ${d.username ? `<div class="tt-user">${avatarHtml} ${d.username}</div>` : ''}
+      <div class="tt-seat">Seggio ${d.seatIdx + 1} / ${d.total}</div>
+    `;
+  })
+  .on('mousemove', event => {
+    tooltip.style.left = (event.clientX + 14) + 'px';
+    tooltip.style.top = (event.clientY - 36) + 'px';
+  })
+  .on('mouseout', (event, d) => {
+    // Riporta alla dimensione normale
+    d3.select(event.currentTarget).select('.seat-inner')
+      .transition().duration(150)
+      .attr('transform', 'scale(1)');
+    tooltip.style.opacity = 0;
+  })
+  .on('click', (event, d) => {
+    if (d.userId) {
+      window.open(`${APP_BASE}/user/${d.userId}`, '_blank');
+    }
+  });
 
     svg.append('text')
       .attr('x', cx).attr('y', cy - 6)

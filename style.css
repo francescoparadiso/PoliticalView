@@ -105,7 +105,7 @@ body::after{content:'';position:fixed;inset:0;background-image:url("data:image/s
 }
 
 /* ── STATS ── */
-.stats-row{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px;}
+.stats-row{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:16px;}
 .stat{background:var(--s1);border:1px solid var(--bd);border-radius:var(--r);padding:14px 16px;transition:border-color .2s;}
 .stat:hover{border-color:var(--bd2);}
 .stat.hl{border-color:rgba(197,150,74,.3);}
@@ -298,7 +298,53 @@ body::after{content:'';position:fixed;inset:0;background-image:url("data:image/s
 .ts-wrapper .ts-control .ts-dropdown-arrow {
   border-top-color: var(--text3) !important;
 }
+/* ── FULLSCREEN OVERLAY ── */
+.parl-overlay {
+  position: fixed; inset: 0; z-index: 10000;
+  background: rgba(7,9,13,.92);
+  backdrop-filter: blur(10px);
+  display: none; align-items: center; justify-content: center;
+  animation: fadeIn .2s ease;
+}
+.parl-overlay.active { display: flex; }
 
+.parl-overlay-box {
+  background: var(--s1);
+  border: 1px solid var(--bd2);
+  border-radius: 14px;
+  width: min(94vw, 1000px);
+  max-height: 90vh;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 64px rgba(0,0,0,.7);
+  animation: scaleIn .22s ease;
+}
+@keyframes scaleIn { from { transform: scale(.94); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+.parl-overlay-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--bd);
+}
+.parl-overlay-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 1rem; font-weight: 600; color: var(--text);
+}
+.overlay-close-btn {
+  background: var(--s2); border: 1px solid var(--bd2);
+  border-radius: 6px; color: var(--text2);
+  width: 30px; height: 30px; cursor: pointer;
+  font-size: 14px; display: flex; align-items: center; justify-content: center;
+  transition: background .15s, color .15s;
+}
+.overlay-close-btn:hover { background: var(--s3); color: var(--text); }
+
+.parl-overlay-content {
+  flex: 1; overflow: auto;
+  padding: 24px;
+  display: flex; align-items: center; justify-content: center;
+}
+.parl-overlay-content svg { width: 100%; height: auto; max-height: 72vh; }
 /* Opzione selezionata (quando si usa multi‑select, non nel nostro caso) */
 .ts-wrapper .item {
   background: var(--s3) !important;
@@ -313,7 +359,48 @@ body::after{content:'';position:fixed;inset:0;background-image:url("data:image/s
   font-family: 'Sora', sans-serif !important;
   font-size: .85rem !important;
 }
+/* ── ACTION BUTTONS (export / fullscreen) ── */
+.action-btn {
+  background: var(--s2);
+  border: 1px solid var(--bd2);
+  border-radius: 5px;
+  color: var(--text2);
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; cursor: pointer;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.action-btn:hover { background: var(--s3); border-color: var(--bd3); color: var(--text); }
+.action-btn:active { transform: scale(.93); }
 
+/* Bottone CSV più largo */
+#exportCsvBtn {
+  width: auto;                  /* si adatta al testo */
+  padding: 0 10px;              /* respiro orizzontale */
+  font-size: 0.72rem;           /* leggermente più piccolo */
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+/* Pulsante toggle race */
+.race-toggle-btn {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 8px;
+  background: var(--s2);
+  border: 1px solid var(--bd2);
+  border-radius: 6px;
+  color: var(--text2);
+  font-family: 'Sora', sans-serif;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.race-toggle-btn:hover {
+  background: var(--s3);
+  border-color: var(--bd3);
+  color: var(--text);
+}
 @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
 
@@ -335,4 +422,7 @@ body::after{content:'';position:fixed;inset:0;background-image:url("data:image/s
   .party-table{font-size:.75rem;}
   .party-table th,.party-table td{padding:6px 4px;}
   .or-divider{display:none;}
+  /* ── RESPONSIVE: 6 cols → 3 on narrow ── */
+@media(max-width:1100px) { .stats-row { grid-template-columns: repeat(3,1fr); } }
+@media(max-width:600px)  { .stats-row { grid-template-columns: 1fr 1fr; } }
 }

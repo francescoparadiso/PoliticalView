@@ -78,6 +78,11 @@
         <div class="stat-value skeleton-val" id="stat-leader" style="font-size:.9rem;padding-top:7px;">—</div>
         <div class="stat-sub">By seats</div>
       </div>
+      <div class="stat">
+        <div class="stat-label">ENP Fragmentation</div>
+        <div class="stat-value skeleton-val" id="stat-enp">—</div>
+        <div class="stat-sub" id="stat-enp-label">—</div>
+      </div>
     </div>
 
     <!-- ══ TIMELINE ══ -->
@@ -128,6 +133,10 @@
             <div class="panel-icon">🏛</div>
             <h2>Parliament Composition</h2>
             <span class="badge-count" id="badgeCount">—</span>
+            <div class="panel-actions" style="margin-left:auto;display:flex;gap:6px;">
+              <button class="action-btn" id="fullscreenBtn" title="Fullscreen">⛶</button>
+              <button class="action-btn" id="exportCsvBtn" title="Export CSV">📥 Export CSV</button>
+            </div>
           </div>
           <!-- Skeleton parliament -->
           <div id="parliamentSkeleton" class="parliament-skeleton">
@@ -210,6 +219,21 @@
 
     </div><!-- /congress-view -->
 
+    <!-- FULLSCREEN OVERLAY -->
+    <div id="parliamentOverlay" class="parl-overlay">
+      <div class="parl-overlay-box">
+        <div class="parl-overlay-head">
+          <span class="parl-overlay-title">🏛 Parliament — Fullscreen</span>
+          <button id="overlayClose" class="overlay-close-btn">✕</button>
+        </div>
+        <div id="parliamentOverlayContent" class="parl-overlay-content"></div>
+      </div>
+    </div>
+  </div>
+  <!-- CLEAR CACHE (nascosto in footer) -->
+  <div style="text-align:center;padding:12px 0 4px;opacity:.35;font-size:.7rem;">
+    <button id="clearCacheBtn" style="background:none;border:none;color:#535e72;cursor:pointer;font-size:.7rem;">⌫ Clear
+      cache</button>
   </div><!-- /app -->
 
   <div class="tooltip" id="tooltip"></div>
