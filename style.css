@@ -401,6 +401,108 @@ body::after{content:'';position:fixed;inset:0;background-image:url("data:image/s
   border-color: var(--bd3);
   color: var(--text);
 }
+
+/* ══ ELECTORAL SIMULATOR ══ */
+.sim-panel { }
+
+/* Slider */
+.sim-slider-label { font-size:.75rem; color:var(--text2); white-space:nowrap; }
+.sim-pct-badge {
+  font-family:'Playfair Display',serif; font-size:1rem; font-weight:700;
+  color:var(--gold2); min-width:38px; text-align:right;
+}
+.sim-slider {
+  -webkit-appearance:none; appearance:none;
+  width:140px; height:4px; border-radius:2px;
+  background:var(--s3); outline:none; cursor:pointer;
+}
+.sim-slider::-webkit-slider-thumb {
+  -webkit-appearance:none; width:14px; height:14px; border-radius:50%;
+  background:var(--gold2); border:2px solid var(--bg); cursor:pointer;
+  transition:transform .15s;
+}
+.sim-slider::-webkit-slider-thumb:hover { transform:scale(1.2); }
+.sim-slider::-moz-range-thumb {
+  width:14px; height:14px; border-radius:50%;
+  background:var(--gold2); border:2px solid var(--bg); cursor:pointer;
+}
+
+/* Historic chips row */
+.sim-historic-row {
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  margin-bottom:14px; padding:10px 0;
+  border-bottom:1px solid var(--bd);
+}
+.sim-section-label { font-size:.72rem; color:var(--text3); text-transform:uppercase; letter-spacing:.5px; white-space:nowrap; }
+.sim-chips { display:flex; flex-wrap:wrap; gap:6px; }
+.sim-chip {
+  font-size:.72rem; color:var(--text2);
+  background:var(--s2); border:1px solid var(--bd2);
+  border-radius:4px; padding:2px 8px;
+}
+.sim-chip-latest {
+  color:var(--gold2); background:rgba(197,150,74,.1);
+  border-color:rgba(197,150,74,.3);
+}
+
+/* Metrics row */
+.sim-metrics {
+  display:grid; grid-template-columns:repeat(5,1fr);
+  gap:10px; margin-bottom:16px;
+}
+.sim-metric {
+  background:var(--s2); border:1px solid var(--bd);
+  border-radius:8px; padding:12px 14px;
+}
+.sim-metric.hl { border-color:rgba(197,150,74,.3); }
+.sim-metric.pres { border-color:rgba(59,130,246,.3); }
+.sim-metric-label { font-size:.68rem; color:var(--text3); text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px; }
+.sim-metric-val {
+  font-family:'Playfair Display',serif; font-size:1.3rem; font-weight:700;
+  color:var(--text); line-height:1.1;
+}
+.sim-metric.hl .sim-metric-val { color:var(--gold2); }
+.sim-metric.pres .sim-metric-val { color:#60a5fa; }
+.sim-metric-sub { font-size:.68rem; color:var(--text3); margin-top:2px; }
+
+/* Projection table */
+.sim-table-wrap { overflow-x:auto; margin-bottom:10px; }
+.sim-table { width:100%; border-collapse:collapse; }
+.sim-table thead tr { border-bottom:1px solid var(--bd2); }
+.sim-table th { text-align:left; color:var(--text3); font-size:.68rem; font-weight:600; text-transform:uppercase; letter-spacing:.5px; padding:0 8px 8px; }
+.sim-table td { padding:7px 8px; border-bottom:1px solid var(--bd); font-size:.82rem; color:var(--text); vertical-align:middle; }
+.sim-table tbody tr:hover td { background:var(--s2); }
+.sim-table tbody tr:last-child td { border-bottom:none; }
+
+/* Footer */
+.sim-footer { font-size:.7rem; color:var(--text3); padding-top:8px; border-top:1px solid var(--bd); }
+/* Input votanti attesi */
+.sim-input-voters {
+  background: var(--s2);
+  border: 1px solid var(--bd2);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: 'Sora', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 6px 10px;
+  width: 120px;
+  text-align: right;
+  transition: border-color .15s;
+}
+.sim-input-voters:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px rgba(197,150,74,.12);
+}
+/* Responsive */
+@media(max-width:900px) {
+  .sim-metrics { grid-template-columns:repeat(3,1fr); }
+  .sim-slider { width:90px; }
+}
+@media(max-width:600px) {
+  .sim-metrics { grid-template-columns:1fr 1fr; }
+  .panel-head .sim-slider-label { display:none; }
+}
 @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
 
@@ -422,7 +524,4 @@ body::after{content:'';position:fixed;inset:0;background-image:url("data:image/s
   .party-table{font-size:.75rem;}
   .party-table th,.party-table td{padding:6px 4px;}
   .or-divider{display:none;}
-  /* ── RESPONSIVE: 6 cols → 3 on narrow ── */
-@media(max-width:1100px) { .stats-row { grid-template-columns: repeat(3,1fr); } }
-@media(max-width:600px)  { .stats-row { grid-template-columns: 1fr 1fr; } }
 }

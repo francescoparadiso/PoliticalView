@@ -64,9 +64,9 @@
         <div class="stat-sub">Represented</div>
       </div>
       <div class="stat">
-        <div class="stat-label">Elected</div>
-        <div class="stat-value skeleton-val" id="stat-elected">—</div>
-        <div class="stat-sub">MPs</div>
+        <div class="stat-label">Total votes</div>
+        <div class="stat-value skeleton-val" id="stat-totalvotes">—</div>
+        <div class="stat-sub">In this election</div>
       </div>
       <div class="stat">
         <div class="stat-label">Majority</div>
@@ -216,7 +216,74 @@
           </div>
         </div>
       </div>
+      <!-- ══ ELECTORAL SIMULATOR ══ -->
+      <div class="panel sim-panel" id="simulatorPanel" style="display:none; margin-top:16px;">
+        <div class="panel-head">
+          <div class="panel-icon">🧮</div>
+          <h2>Electoral Simulator</h2>
+          <span class="badge-count" style="margin-left:8px;">Projection</span>
+          <div style="margin-left:auto; display:flex; align-items:center; gap:10px;">
+            <label class="sim-slider-label">Expected voters</label>
+            <input type="number" id="simExpectedVotersInput" class="sim-input-voters" value="" placeholder="e.g. 1000"
+              min="1" step="1">
+          </div>
+        </div>
 
+        <!-- Historic ref chips -->
+        <div class="sim-historic-row">
+          <span class="sim-section-label">📊 Historic turnout</span>
+          <div id="simHistoricRef" class="sim-chips"></div>
+        </div>
+
+        <!-- Key metrics -->
+        <div class="sim-metrics">
+          <div class="sim-metric">
+            <div class="sim-metric-label">Population</div>
+            <div class="sim-metric-val" id="simPopulation">—</div>
+          </div>
+          <div class="sim-metric">
+            <div class="sim-metric-label">Avg seats</div>
+            <div class="sim-metric-val" id="simAvgVotes">—</div>
+            <div class="sim-metric-sub" id="simAvgTurnout">—</div>
+          </div>
+          <div class="sim-metric hl">
+            <div class="sim-metric-label">Expected voters</div>
+            <div class="sim-metric-val" id="simExpVoters">—</div>
+            <div class="sim-metric-sub">at current %</div>
+          </div>
+          <div class="sim-metric hl">
+            <div class="sim-metric-label">Votes / seat</div>
+            <div class="sim-metric-val" id="simVotesPerSeat">—</div>
+            <div class="sim-metric-sub">projected threshold</div>
+          </div>
+          <div class="sim-metric pres">
+            <div class="sim-metric-label">To win presidency</div>
+            <div class="sim-metric-val" id="simVotesToWin">—</div>
+            <div class="sim-metric-sub">50% + 1 of expected</div>
+          </div>
+        </div>
+
+        <!-- Party projection table -->
+        <div class="sim-table-wrap">
+          <table class="sim-table">
+            <thead>
+              <tr>
+                <th>Party</th>
+                <th>Vote share</th>
+                <th>Projected votes</th>
+                <th>Current seats</th>
+                <th>Delta</th>
+                <th>Projected seats</th>
+              </tr>
+            </thead>
+            <tbody id="simPartyBody"></tbody>
+          </table>
+        </div>
+
+        <div class="sim-footer">
+          ⚠️ Projection based on current party membership × expected turnout. Assumes proportional allocation.
+        </div>
+      </div>
     </div><!-- /congress-view -->
 
     <!-- FULLSCREEN OVERLAY -->

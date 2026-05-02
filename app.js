@@ -1,5 +1,5 @@
-const API_BASE = 'https://both-shelve-usher.ngrok-free.dev/api';
-//const API_BASE = 'http://localhost:3000/api';
+//const API_BASE = 'https://both-shelve-usher.ngrok-free.dev/api';
+const API_BASE = 'http://localhost:3000/api';
 
 const APP_BASE = 'https://app.warera.io';
 
@@ -11,7 +11,7 @@ const PALETTE = [
 ];
 /* ── CACHE localStorage ── */
 const CACHE_TTL_SHORT = 3 * 60 * 1000;   // 3 min per elezioni recenti
-const CACHE_TTL_LONG  = 60 * 60 * 1000;  // 1 ora per elezioni concluse
+const CACHE_TTL_LONG = 60 * 60 * 1000;  // 1 ora per elezioni concluse
 
 function cacheKey(path, params) {
   return 'we_' + path + '_' + JSON.stringify(params);
@@ -26,12 +26,12 @@ function cacheGet(key) {
   } catch (_) { return null; }
 }
 function cacheSet(key, data, ttl) {
-  try { localStorage.setItem(key, JSON.stringify({ data, ts: Date.now(), ttl })); } catch (_) {}
+  try { localStorage.setItem(key, JSON.stringify({ data, ts: Date.now(), ttl })); } catch (_) { }
 }
 function cacheClear() {
   try {
     Object.keys(localStorage).filter(k => k.startsWith('we_')).forEach(k => localStorage.removeItem(k));
-  } catch (_) {}
+  } catch (_) { }
 }
 /* ── PLUGIN centerText ── */
 const centerTextPlugin = {
@@ -59,6 +59,7 @@ const centerTextPlugin = {
 Chart.register(centerTextPlugin);
 
 let _partyColorMap = new Map();
+let _csvColorMap = new Map(); 
 let _partyNamesMap = new Map();
 let _seatsChart, _membersChart, _allPartiesChart, _presidentChart, _timelineChart;
 let _apiKey = sessionStorage.getItem('we_key') || '';
@@ -67,6 +68,9 @@ let _electionHistory = [];
 let _currentCongressElectionId = null;
 let _timelineElectionIds = [];
 let _currentCountryId = '6813b6d446e731854c7ac7a2';
+let _currentCountryData = null;   // { population, name, ... }
+let _historicTurnouts = [];       // [{ electionId, totalVotes, date }]
+let _lastAllParties = null;   // per il simulatore, tutti i partiti
 
 /* ── ABBR INTELLIGENTE ── */
 function makeAbbr(name) {
@@ -107,9 +111,11 @@ function stringToColor(str) {
 }
 
 function getPartyColor(partyId) {
-  // Se il colore è già stato assegnato (da CSV o da hash precedente), riutilizzalo
+  // 1. Colori permanenti dal CSV
+  if (_csvColorMap.has(partyId)) return _csvColorMap.get(partyId);
+  // 2. Colori già generati in sessione
   if (_partyColorMap.has(partyId)) return _partyColorMap.get(partyId);
-  // Altrimenti genera un colore deterministico basato sull'ID e salvalo
+  // 3. Altrimenti genera e salva nei temporanei
   const color = stringToColor(partyId);
   _partyColorMap.set(partyId, color);
   return color;
@@ -151,7 +157,7 @@ function fillStat(id, val) {
   el.classList.add('loaded');
 }
 function resetStats() {
-  ['stat-seats', 'stat-parties', 'stat-elected', 'stat-majority', 'stat-leader'].forEach(id => {
+  ['stat-seats', 'stat-parties', 'stat-totalvotes', 'stat-majority', 'stat-leader'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     el.textContent = '—';
@@ -482,6 +488,21 @@ async function loadTimelineData(elections, electionIds) {
       }
     }
   }
+
+  // Popola _historicTurnouts per il simulatore
+  _historicTurnouts = [];
+  for (const election of elections) {
+    try {
+      const data = await localFetch('/election', { id: election._id });
+      const totalVotes = data.votesCount || (data.candidates || []).reduce((s, c) => s + (c.voteCount || 0), 0);
+      _historicTurnouts.push({
+        electionId: election._id,
+        totalVotes: totalVotes || 0,
+        date: election.createdAt,
+        seats: (data.candidates || []).filter(c => c.isElected).length
+      });
+    } catch (_) { }
+  }
   // --------------------------------------------------------
 
   const datasets = [];
@@ -674,9 +695,10 @@ async function loadPartyColors(csvUrl) {
       if (parts.length >= 2) {
         const id = parts[0];
         const color = parts[parts.length - 1]; // prende solo l'ultimo campo (il colore)
-        if (id && color) _partyColorMap.set(id, color);
+        if (id && color) _csvColorMap.set(id, color);   // ← salvato permanentemente
       }
     });
+    console.log(`🎨 ${_csvColorMap.size} colors loaded from CSV`);
   } catch (err) {
     console.warn('CSV colors not loaded:', err.message);
   }
@@ -809,8 +831,6 @@ async function loadPresidentialElection(election) {
   document.getElementById('timelinePanel').style.display = 'none';
   showView('president');
   resetStats();
-  fillStat('stat-elected', election.candidates?.length ?? '—');
-
   const candidates = [];
   for (const c of election.candidates) {
     const userData = await localFetch('/user', { id: c.user || c.userId });
@@ -820,6 +840,8 @@ async function loadPresidentialElection(election) {
   candidates.sort((a, b) => b.votes - a.votes);
 
   const totalVotes = election.votesCount || candidates.reduce((s, c) => s + c.votes, 0);
+  fillStat('stat-totalvotes', totalVotes.toLocaleString());
+
   const winner = candidates.find(c => c.isElected) || candidates[0];
   const maxVotes = candidates[0]?.votes || 1;
 
@@ -915,7 +937,6 @@ async function loadPresidentialElection(election) {
   `;
   renderPresidentialTurnoutChart(election._id);
   document.getElementById('badgeCount').textContent = `Presidenziale · ${totalVotes} voti`;
-  fillStat('stat-elected', candidates.length);
 }
 
 /* ── CONGRESS ELECTION ── */
@@ -926,6 +947,8 @@ async function loadCongressElection(election) {
   showSkeleton();
   resetStats();
 
+  const totalVotes = election.votesCount || election.candidates.reduce((s, c) => s + (c.voteCount || 0), 0);
+  fillStat('stat-totalvotes', totalVotes.toLocaleString());
   const elected = election.candidates.filter(c => c.isElected);
   if (!elected.length) throw new Error('No elected candidates found.');
 
@@ -958,8 +981,8 @@ async function loadCongressElection(election) {
   Object.values(allPartyDetailsMap).forEach(pd => { if (pd?.leader) allUserIds.add(String(pd.leader)); });
 
   const userMap = {};
-  for (const uid of allUserIds) { 
-    userMap[uid] = await localFetch('/user', { id: uid }).catch(() => ({})); 
+  for (const uid of allUserIds) {
+    userMap[uid] = await localFetch('/user', { id: uid }).catch(() => ({}));
   }
 
   // 5. electedParties (partiti con seggi)
@@ -1011,7 +1034,6 @@ async function loadCongressElection(election) {
 
   fillStat('stat-seats', totalSeats);
   fillStat('stat-parties', electedParties.length);
-  fillStat('stat-elected', elected.length);
   fillStat('stat-majority', majority);
   fillStat('stat-leader', electedParties[0]?.name || '—');
   // Effective Number of Parties (Laakso-Taagepera)
@@ -1047,8 +1069,153 @@ async function loadCongressElection(election) {
   const badge = `${electedParties.length} parties · ${totalSeats} seats`;
   setStatus(badge, '');
   document.getElementById('badgeCount').textContent = badge;
-  window._lastElectedParties = electedParties;   // ← per CSV export
+  window._lastElectedParties = electedParties;
+  window._lastAllParties = allParties;   // salva tutti i partiti per il simulatore
   electedParties.forEach(p => _partyNamesMap.set(p.id, p.name));
+
+  // Preimposta l'expected voters con i voti totali dell'elezione corrente
+const input = document.getElementById('simExpectedVotersInput');
+if (input) {
+  input.value = totalVotes || '';
+}
+
+  // Simulatore
+  renderSimulator(allParties, totalSeats);   // passa allParties anziché electedParties
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ELECTORAL SIMULATOR
+   ─ Historic turnout from real election data
+   ─ User-adjustable expected turnout slider
+   ─ Votes needed per seat / presidency
+   ─ Per-party projection
+══════════════════════════════════════════════════════════════ */
+function renderSimulator(allParties, totalSeatsCurrent) {
+  const panel = document.getElementById('simulatorPanel');
+  if (!panel) return;
+
+  const inputEl = document.getElementById('simExpectedVotersInput');
+  const rawValue = inputEl?.value?.trim();
+  let expectedVoters = parseInt(rawValue, 10);
+
+  // Se il campo è vuoto o non è un numero valido → mostra il pannello ma senza risultati
+  if (!rawValue || isNaN(expectedVoters) || expectedVoters <= 0) {
+    panel.style.display = '';  // assicurati che sia visibile
+    // Opzionale: mostra un messaggio invece della tabella
+    const tbody = document.getElementById('simPartyBody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text3);">Enter a valid number of expected voters</td></tr>';
+    // Pulisci le metriche (o lascia i vecchi valori)
+    document.getElementById('simExpVoters').textContent = '—';
+    document.getElementById('simVotesPerSeat').textContent = '—';
+    document.getElementById('simVotesToWin').textContent = '—';
+    return; // ferma qui, ma pannello visibile
+  }
+  panel.style.display = '';
+
+  // 1. Popolazione attiva
+  const population = _currentCountryData?.rankings?.countryActivePopulation?.value || null;
+
+ let dynamicSeats = null;
+if (population) {
+  dynamicSeats = Math.min(50, Math.floor(population / 20) + 2);
+}
+// Anche il fallback non deve mai superare 50
+const MAX_SEATS = 50;
+const totalSeats = dynamicSeats !== null 
+  ? dynamicSeats 
+  : Math.min(MAX_SEATS, totalSeatsCurrent);
+
+  // Metriche
+  const projVotesPerSeat = totalSeats > 0 ? Math.round(expectedVoters / totalSeats) : null;
+  const votesToWinPres = Math.floor(expectedVoters / 2) + 1;
+
+  // Mostra i valori nelle metriche
+  document.getElementById('simPopulation').textContent = population ? population.toLocaleString() : '—';
+  document.getElementById('simExpVoters').textContent = expectedVoters.toLocaleString();
+  document.getElementById('simVotesPerSeat').textContent = projVotesPerSeat ? projVotesPerSeat.toLocaleString() : '—';
+  document.getElementById('simVotesToWin').textContent = votesToWinPres ? votesToWinPres.toLocaleString() : '—';
+
+  // Aggiungi una nuova metrica per i seggi calcolati (la puoi anche sostituire a "Avg votes")
+  // Per ora riutilizzo l'elemento 'simAvgVotes' per mostrare i seggi dinamici
+  // (modifica l'HTML se preferisci un elemento dedicato)
+const seggiEl = document.getElementById('simAvgVotes');
+if (seggiEl) {
+  const note = dynamicSeats ? ' (calc)' : (totalSeatsCurrent > MAX_SEATS ? ' (capped)' : ' (from election)');
+  seggiEl.textContent = totalSeats + note;
+  seggiEl.style.fontSize = '1.1rem';
+}
+  // Sottoetichetta (simAvgTurnout) come "max 50" o "based on pop"
+const seggiSubEl = document.getElementById('simAvgTurnout');
+if (seggiSubEl) {
+  if (dynamicSeats) {
+    seggiSubEl.textContent = `max 50 · pop/20+2`;
+  } else if (totalSeatsCurrent > MAX_SEATS) {
+    seggiSubEl.textContent = `election had ${totalSeatsCurrent}, capped at 50`;
+  } else {
+    seggiSubEl.textContent = 'current election';
+  }
+}
+
+  // Chip storico (invariato)
+  const congressElections = _electionHistory.filter(e => e.type === 'congress');
+  const recentTurnouts = congressElections.slice(-6).map(e => ({
+    electionId: e._id,
+    totalVotes: e.votesCount || 0,
+    date: e.createdAt,
+    seats: (e.candidates || []).filter(c => c.isElected).length
+  }));
+  const avgVotes = recentTurnouts.length
+    ? Math.round(recentTurnouts.reduce((s, t) => s + t.totalVotes, 0) / recentTurnouts.length)
+    : null;
+  const refEl = document.getElementById('simHistoricRef');
+  if (refEl) {
+    if (recentTurnouts.length === 0) {
+      refEl.innerHTML = '<span style="color:var(--text3);font-size:.72rem;">No historical data yet</span>';
+    } else {
+      refEl.innerHTML = recentTurnouts.map((t, i) => {
+        const d = t.date ? new Date(t.date).toLocaleDateString('en', { month: 'short', year: '2-digit' }) : `#${i + 1}`;
+        const pct = population ? ((t.totalVotes / population) * 100).toFixed(0) + '%' : t.totalVotes.toLocaleString() + ' v';
+        const isLast = i === recentTurnouts.length - 1;
+        return `<span class="sim-chip${isLast ? ' sim-chip-latest' : ''}" title="Election ${d}: ${t.totalVotes.toLocaleString()} votes">${d} · ${pct}</span>`;
+      }).join('');
+    }
+  }
+
+  // Tabella partiti (basata sui membri)
+  const tbody = document.getElementById('simPartyBody');
+  if (tbody) {
+    const totalMembers = allParties.reduce((s, p) => s + (p.members || 0), 0);
+    if (totalMembers === 0) {
+      tbody.innerHTML = '<tr><td colspan="6">No member data available</td></tr>';
+    } else {
+      tbody.innerHTML = allParties.map(p => {
+        const memberShare = (p.members || 0) / totalMembers;
+        const projVotes = Math.round(expectedVoters * memberShare);
+        const projSeats = projVotesPerSeat && projVotesPerSeat > 0
+          ? Math.round(projVotes / projVotesPerSeat)
+          : 0;
+        const delta = projSeats - (p.seats || 0);
+        const deltaStr = delta === 0 ? '=' : (delta > 0 ? `+${delta}` : `${delta}`);
+        const deltaColor = delta > 0 ? '#22c55e' : delta < 0 ? '#ef4444' : '#535e72';
+        const sharePct = (memberShare * 100).toFixed(1);
+        return `<tr>
+          <td><span class="party-color-bar" style="background:${p.color};display:inline-block;width:3px;height:16px;border-radius:2px;margin-right:6px;vertical-align:middle;"></span>${p.name}</td>
+          <td style="color:var(--text2)">${sharePct}% (membri)</td>
+          <td>${projVotes.toLocaleString()}</td>
+          <td>${p.seats || 0}</td>
+          <td style="font-weight:600;color:${deltaColor}">${deltaStr}</td>
+          <td style="font-weight:600">${projSeats}</td>
+        </tr>`;
+      }).join('');
+    }
+  }
+}
+
+function onExpectedVotersChange() {
+  if (window._lastAllParties) {
+    const totalSeats = window._lastAllParties.reduce((s, p) => s + (p.seats || 0), 0);
+    renderSimulator(window._lastAllParties, totalSeats);
+  }
 }
 
 /* ── MAIN ENTRY ── */
@@ -1056,8 +1223,10 @@ async function loadElection(id) {
   const electionId = id || document.getElementById('electionIdInput').value.trim();
   if (!electionId) { setStatus('Enter an election ID', 'error'); return; }
 
-  if (_pendingRequest) { /* … invariato … */ }
-
+  if (_pendingRequest) {
+    clearTimeout(_pendingRequest.timeout);
+    if (_pendingRequest.controller) _pendingRequest.controller.abort();
+  }
   const selectEl = document.getElementById('electionSelect');
   const inputEl = document.getElementById('electionIdInput');
   const btnEl = document.getElementById('loadBtn');
@@ -1082,18 +1251,18 @@ async function loadElection(id) {
         return;
       }
 
-     if (election.type === 'president') await loadPresidentialElection(election);
+      if (election.type === 'president') await loadPresidentialElection(election);
       else if (election.type === 'congress') await loadCongressElection(election);
       else throw new Error(`Unknown election type: ${election.type}`);
 
       setStatus('Updated Data', '');
-      
+
       // Traccia il caricamento elezione su Umami
       if (window.umami) {
-        window.umami.track('election-load', { 
-          electionId: election._id, 
+        window.umami.track('election-load', {
+          electionId: election._id,
           type: election.type,
-          countryId: election.country || _currentCountryId 
+          countryId: election.country || _currentCountryId
         });
       }
     } catch (err) {
@@ -1114,9 +1283,18 @@ async function loadElection(id) {
 /* ── BOOT ── */
 document.addEventListener('DOMContentLoaded', () => {
   // 1. Carica i colori dal CSV globale
-  loadPartyColors('parties_6813b6d446e731854c7ac7a2.csv').then(() => {
+  loadPartyColors('parties_6813b6d446e731854c7ac7a2.csv').then(async () => {
     console.log(`🎨 ${_partyColorMap.size} colors loaded from CSV`);
     loadCountries();
+
+    // 🔁 Recupera i dati della nazione predefinita (Italia)
+    try {
+      const data = await localFetch('/countries', {}, { useCache: false });
+      _currentCountryData = (data?.items || []).find(c => c._id === _currentCountryId) || null;
+    } catch (_) {
+      _currentCountryData = null;
+    }
+
     loadElectionsHistory();
   });
 
@@ -1130,6 +1308,14 @@ document.addEventListener('DOMContentLoaded', () => {
     _currentCongressElectionId = null;
     _partyColorMap.clear();       // opzionale ma consigliato
     _partyNamesMap.clear();
+    // Recupera i dati del paese (popolazione attiva, etc.)
+    try {
+      const data = await localFetch('/countries', {}, { useCache: false });
+      _currentCountryData = (data?.items || []).find(c => c._id === newCountryId) || null;
+    } catch (_) {
+      _currentCountryData = null;
+    }
+
 
     setStatus('Loading…', 'loading');
 
@@ -1161,6 +1347,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // 4. Listener per export / fullscreen (una volta sola)
   document.getElementById('exportCsvBtn')?.addEventListener('click', () => exportCSV(window._lastElectedParties));
   document.getElementById('fullscreenBtn')?.addEventListener('click', openParliamentFullscreen);
+  // 5. Simulator slider
+  document.getElementById('simExpectedVotersInput')?.addEventListener('input', onExpectedVotersChange);
   document.getElementById('overlayClose')?.addEventListener('click', closeParliamentFullscreen);
   document.getElementById('parliamentOverlay')?.addEventListener('click', e => {
     if (e.target === document.getElementById('parliamentOverlay')) closeParliamentFullscreen();
