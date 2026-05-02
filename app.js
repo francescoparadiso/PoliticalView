@@ -1,5 +1,5 @@
-//const API_BASE = 'https://both-shelve-usher.ngrok-free.dev/api';
-const API_BASE = 'http://localhost:3000/api';
+const API_BASE = 'https://both-shelve-usher.ngrok-free.dev/api';
+//const API_BASE = 'http://localhost:3000/api';
 
 const APP_BASE = 'https://app.warera.io';
 
