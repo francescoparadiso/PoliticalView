@@ -519,7 +519,7 @@ async function loadTimelineData(elections, electionIds) {
   let colorIdx = 0;
   for (const pid of allPids) {
     if (pid === 'independent') continue;
-    const color = _partyColorMap.get(pid) || PALETTE[colorIdx % PALETTE.length];
+    const color = getPartyColor(pid);
     const name = _partyNamesMap.get(pid) || pid.slice(-6);   // ora dovrebbe esserci
     const data = partySeatsPerElection.map(m => m[pid] || 0);
     if (data.every(v => v === 0)) continue;
