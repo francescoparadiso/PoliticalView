@@ -1200,7 +1200,7 @@ if (seggiSubEl) {
         const sharePct = (memberShare * 100).toFixed(1);
         return `<tr>
           <td><span class="party-color-bar" style="background:${p.color};display:inline-block;width:3px;height:16px;border-radius:2px;margin-right:6px;vertical-align:middle;"></span>${p.name}</td>
-          <td style="color:var(--text2)">${sharePct}% (membri)</td>
+          <td style="color:var(--text2)">${sharePct}% (member)</td>
           <td>${projVotes.toLocaleString()}</td>
           <td>${p.seats || 0}</td>
           <td style="font-weight:600;color:${deltaColor}">${deltaStr}</td>
