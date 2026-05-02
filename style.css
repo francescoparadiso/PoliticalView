@@ -490,6 +490,8 @@ body::after{content:'';position:fixed;inset:0;background-image:url("data:image/s
   text-align: right;
   transition: border-color .15s;
 }
+
+
 .sim-input-voters:focus {
   border-color: var(--gold);
   box-shadow: 0 0 0 2px rgba(197,150,74,.12);
