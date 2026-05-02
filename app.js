@@ -1,6 +1,6 @@
 
 //const API_BASE = 'http://localhost:3000/api';
-const API_BASE = 'https://politicalview-proxy.fra-paradiso2.workers.dev/cache/';
+const API_BASE = 'https://politicalview-proxy.fra-paradiso2.workers.dev/cache';
 const APP_BASE = 'https://app.warera.io';
 
 
