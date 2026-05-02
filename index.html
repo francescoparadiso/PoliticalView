@@ -109,6 +109,10 @@
           <h2>Presidential Election</h2>
           <span class="badge-count" id="pres-status-badge" style="margin-left:auto;"></span>
         </div>
+        <!-- Countdown live -->
+        <div id="presCountdown" class="pres-countdown"></div>
+        <!-- Margin of victory -->
+        <div id="presMargin" class="pres-margin" style="display:none;"></div>
         <div id="pres-winner-banner" class="pres-winner" style="display:none;"></div>
         <div id="pres-race" class="pres-race"></div>
         <div class="pres-chart-wrap">
@@ -119,6 +123,68 @@
           <h3 style="font-family:'Playfair Display',serif;font-size:.9rem;color:var(--text2);margin-bottom:8px;">📈
             Presidential turnout</h3>
           <canvas id="presidentTurnoutChart" role="img" aria-label="Presidential votes trend"></canvas>
+          <!-- Historic winners -->
+          <div id="presHistoricPanel" style="display:none;margin-top:20px;">
+            <div class="pres-section-head">🏆 Past presidential winners</div>
+            <table class="sim-table" style="margin-top:8px;">
+              <thead>
+                <tr>
+                  <th>Election</th>
+                  <th>Winner</th>
+                  <th>Party</th>
+                  <th>Votes</th>
+                  <th>Runner-up</th>
+                </tr>
+              </thead>
+              <tbody id="presHistoricBody"></tbody>
+            </table>
+          </div>
+
+          <!-- Presidential simulator -->
+          <div id="presSimPanel" style="display:none;margin-top:20px;">
+            <div class="pres-section-head"
+              style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+              <span>🧮 Presidential simulator</span>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <label class="sim-slider-label">Expected voters</label>
+                <input type="number" id="presSimVoters" class="sim-input-voters" placeholder="e.g. 1000" min="1"
+                  step="1">
+              </div>
+            </div>
+            <div class="sim-historic-row" style="margin-top:10px;">
+              <span class="sim-section-label">📊 Historic presidential turnout</span>
+              <div id="presSimHistRef" class="sim-chips"></div>
+            </div>
+            <div class="sim-metrics" style="margin-top:10px;">
+              <div class="sim-metric">
+                <div class="sim-metric-label">Avg hist. votes</div>
+                <div class="sim-metric-val" id="presSimAvgHist">—</div>
+              </div>
+              <div class="sim-metric hl">
+                <div class="sim-metric-label">Expected voters</div>
+                <div class="sim-metric-val" id="presSimExpected">—</div>
+              </div>
+              <div class="sim-metric pres">
+                <div class="sim-metric-label">Votes to win (50%+1)</div>
+                <div class="sim-metric-val" id="presSimToWin">—</div>
+              </div>
+            </div>
+            <table class="sim-table" style="margin-top:12px;">
+              <thead>
+                <tr>
+                  <th>Candidate</th>
+                  <th>Current votes</th>
+                  <th>Vote share</th>
+                  <th>Proj. share</th>
+                  <th>Still needed</th>
+                </tr>
+              </thead>
+              <tbody id="presSimBody"></tbody>
+            </table>
+            <div class="sim-footer" style="margin-top:8px;">
+              ⚠️ Projection based on current votes scaled to expected turnout.
+            </div>
+          </div>
         </div>
       </div>
     </div>

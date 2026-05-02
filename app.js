@@ -1,6 +1,6 @@
-const API_BASE = 'https://both-shelve-usher.ngrok-free.dev/api';
-//const API_BASE = 'http://localhost:3000/api';
 
+//const API_BASE = 'http://localhost:3000/api';
+const API_BASE = 'https://politicalview-proxy.fra-paradiso2.workers.dev/cache/';
 const APP_BASE = 'https://app.warera.io';
 
 
@@ -127,18 +127,25 @@ async function localFetch(path, params = {}, { useCache = true, ttl = null } = {
     const cached = cacheGet(key);
     if (cached) return cached;
   }
+
+  // Rimuovi "/api" dal percorso, perché gli endpoint di Perni non lo hanno
+  const cleanPath = path.replace('/api/', '');
+
   const qs = new URLSearchParams(params).toString();
-  const url = `${API_BASE}${path}${qs ? '?' + qs : ''}`;
+  const url = `${API_BASE}${cleanPath}${qs ? '?' + qs : ''}`;
+
   const headers = {
     ...(_apiKey && { Authorization: `Bearer ${_apiKey}` }),
-    'ngrok-skip-browser-warning': 'true'
   };
+
   const res = await fetch(url, { headers });
-  if (!res.ok) throw new Error(`HTTP ${res.status} → ${path}`);
-  const json = await res.json();
-  // Determina TTL: breve per elezioni in corso, lungo per dati stabili
+  if (!res.ok) throw new Error(`HTTP ${res.status} → ${cleanPath}`);
+
+  let json = await res.json();
+  if (Array.isArray(json)) json = { items: json };
+
   if (useCache) {
-    const autoTtl = ttl ?? (path === '/election' ? CACHE_TTL_SHORT : CACHE_TTL_LONG);
+    const autoTtl = ttl ?? (cleanPath === 'election' ? CACHE_TTL_SHORT : CACHE_TTL_LONG);
     cacheSet(key, json, autoTtl);
   }
   return json;
@@ -832,10 +839,24 @@ async function loadPresidentialElection(election) {
   showView('president');
   resetStats();
   const candidates = [];
+  // Pre-fetch dei partiti dei candidati
+  const candidatePartyIds = [...new Set(election.candidates.map(c => c.party || c.partyId).filter(Boolean))];
+  const candPartyMap = {};
+  await Promise.all(candidatePartyIds.map(async pid => {
+    try {
+      const p = await localFetch('/party', { id: pid });
+      if (p?.name) {
+        candPartyMap[pid] = { name: p.name, color: _csvColorMap.get(pid) || PALETTE[Object.keys(candPartyMap).length % PALETTE.length] };
+      }
+    } catch (_) {}
+  }));
+
   for (const c of election.candidates) {
     const userData = await localFetch('/user', { id: c.user || c.userId });
     const votes = election.votes ? (election.votes[String(c.user || c.userId)] ?? c.voteCount ?? 0) : (c.voteCount ?? 0);
-    candidates.push({ ...c, userData, votes, color: PALETTE[candidates.length % PALETTE.length] });
+    const partyId = c.party || c.partyId || null;
+    const partyInfo = partyId ? (candPartyMap[partyId] || null) : null;
+    candidates.push({ ...c, userData, votes, color: PALETTE[candidates.length % PALETTE.length], partyInfo, partyId });
   }
   candidates.sort((a, b) => b.votes - a.votes);
 
@@ -848,10 +869,35 @@ async function loadPresidentialElection(election) {
   const now = new Date(), end = new Date(election.votesEndAt), start = new Date(election.votesStartAt);
   let statusText = '', statusClass = '';
   if (now < start) { statusText = '🗳 Candidatura'; statusClass = 'pres-badge-pending'; }
-  else if (now <= end) { statusText = '🔴 Votazione in corso'; statusClass = 'pres-badge-live'; }
-  else { statusText = '✅ Conclusa'; statusClass = 'pres-badge-done'; }
+  else if (now <= end) { statusText = '🔴 In progress'; statusClass = 'pres-badge-live'; }
+  else { statusText = '✅ Concluded'; statusClass = 'pres-badge-done'; }
   const sb = document.getElementById('pres-status-badge');
   sb.textContent = statusText; sb.className = 'badge-count ' + statusClass;
+
+  // Clear any previous countdown
+  if (window._presCountdown) { clearInterval(window._presCountdown); window._presCountdown = null; }
+
+  // Live countdown when voting is open
+  if (now <= end && now >= start) {
+    const countdownEl = document.getElementById('presCountdown');
+    const updateCountdown = () => {
+      const remaining = new Date(election.votesEndAt) - new Date();
+      if (remaining <= 0) {
+        clearInterval(window._presCountdown);
+        if (countdownEl) countdownEl.textContent = 'Voting ended';
+        return;
+      }
+      const h = Math.floor(remaining / 3600000);
+      const m = Math.floor((remaining % 3600000) / 60000);
+      const s = Math.floor((remaining % 60000) / 1000);
+      if (countdownEl) countdownEl.textContent = `Closes in ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    };
+    updateCountdown();
+    window._presCountdown = setInterval(updateCountdown, 1000);
+  } else {
+    const countdownEl = document.getElementById('presCountdown');
+    if (countdownEl) countdownEl.textContent = '';
+  }
 
   const banner = document.getElementById('pres-winner-banner');
   if (winner && now > end) {
@@ -875,17 +921,42 @@ async function loadPresidentialElection(election) {
     banner.style.display = 'none';
   }
 
+  // Margin of victory
+  const marginVotes = candidates.length >= 2 ? candidates[0].votes - candidates[1].votes : 0;
+  const marginPct   = totalVotes && candidates.length >= 2
+    ? ((candidates[0].votes - candidates[1].votes) / totalVotes * 100).toFixed(1)
+    : null;
+  const marginEl = document.getElementById('presMargin');
+  if (marginEl && now > end && candidates.length >= 2) {
+    marginEl.style.display = '';
+    marginEl.innerHTML = `
+      <span class="margin-label">Margin of victory</span>
+      <span class="margin-val">${marginVotes.toLocaleString()} votes</span>
+      <span class="margin-pct">${marginPct}%</span>
+      <span class="margin-vs">over ${candidates[1].userData.username}</span>`;
+  } else if (marginEl) {
+    marginEl.style.display = 'none';
+  }
+
   document.getElementById('pres-race').innerHTML = candidates.map((c, i) => {
-    const pct = totalVotes ? ((c.votes / totalVotes) * 100).toFixed(1) : 0;
-    const barW = maxVotes ? ((c.votes / maxVotes) * 100).toFixed(1) : 0;
+    const pct  = totalVotes ? ((c.votes / totalVotes) * 100).toFixed(1) : 0;
+    const barW = maxVotes   ? ((c.votes / maxVotes) * 100).toFixed(1)   : 0;
     const isWin = c.isElected;
     const av = c.userData.avatarUrl
       ? `<img src="${c.userData.avatarUrl}" class="race-avatar" alt="">`
       : `<div class="race-avatar race-initials" style="background:${c.color}33;color:${c.color}">${c.userData.username[0].toUpperCase()}</div>`;
+    const partyChip = c.partyInfo
+      ? `<span class="race-party-chip" style="background:${c.partyInfo.color}22;border-color:${c.partyInfo.color}55;color:${c.partyInfo.color}">${c.partyInfo.name}</span>`
+      : '';
+    const gapStr = i > 0 && candidates[0].votes > 0
+      ? `<span class="race-gap">-${(candidates[0].votes - c.votes).toLocaleString()}</span>` : '';
     return `<div class="race-row${isWin ? ' race-winner' : ''}">
       <div class="race-rank">${i + 1}</div>${av}
       <div class="race-info">
-        <div class="race-name">${c.userData.username}${isWin ? ' <span class="race-win-chip">Eletto</span>' : ''}</div>
+        <div class="race-name">
+          ${c.userData.username}${isWin ? ' <span class="race-win-chip">Elected</span>' : ''}${gapStr}
+          ${partyChip}
+        </div>
         <div class="race-bar-wrap"><div class="race-bar" style="width:${barW}%;background:${c.color}"></div></div>
       </div>
       <div class="race-stats">
@@ -894,19 +965,17 @@ async function loadPresidentialElection(election) {
       </div>
     </div>`;
   }).join('');
-  // Collasso automatico se ci sono più di 8 candidati
+  // Collasso automatico se ci sono più di 6 candidati
   const threshold = 6;
   const raceDiv = document.getElementById('pres-race');
   if (candidates.length > threshold) {
     const rows = raceDiv.querySelectorAll('.race-row');
-    // Nasconde tutte le righe oltre la soglia
     rows.forEach((row, i) => {
       if (i >= threshold) {
         row.style.display = 'none';
         row.classList.add('collapsed-candidate');
       }
     });
-    // Pulsante per mostrare/nascondere
     const toggleBtn = document.createElement('button');
     toggleBtn.className = 'race-toggle-btn';
     toggleBtn.textContent = `Show more (${candidates.length})`;
@@ -936,9 +1005,134 @@ async function loadPresidentialElection(election) {
     <a href="${APP_BASE}/country/${election.country}/election/${election._id}" target="_blank" class="pres-meta-link">Vai all'elezione →</a>
   `;
   renderPresidentialTurnoutChart(election._id);
+  renderPresidentialHistoricWinners(election._id);
+  // Presidential simulator
+  window._lastPresData = { candidates, totalVotes, election };
+  renderPresSimulator(candidates, totalVotes, election);
   document.getElementById('badgeCount').textContent = `Presidenziale · ${totalVotes} voti`;
 }
+/* ── PRESIDENTIAL SIMULATOR ── */
+function renderPresSimulator(candidates, totalVotes, election) {
+  const panel = document.getElementById('presSimPanel');
+  if (!panel) return;
 
+  const presHistoric = _electionHistory
+    .filter(e => e.type === 'president' && e.votesCount > 0)
+    .slice(-5);
+  const avgPresVotes = presHistoric.length
+    ? Math.round(presHistoric.reduce((s, e) => s + (e.votesCount || 0), 0) / presHistoric.length)
+    : null;
+
+  const input = document.getElementById('presSimVoters');
+  const expectedVoters = parseInt(input?.value) || avgPresVotes || totalVotes || 0;
+  const toWin = Math.floor(expectedVoters / 2) + 1;
+
+  panel.style.display = '';
+  document.getElementById('presSimExpected').textContent = expectedVoters.toLocaleString();
+  document.getElementById('presSimToWin').textContent    = toWin.toLocaleString();
+  document.getElementById('presSimAvgHist').textContent  = avgPresVotes ? avgPresVotes.toLocaleString() : '—';
+
+  // Historic presidential elections chips
+  const histRef = document.getElementById('presSimHistRef');
+  if (histRef) {
+    histRef.innerHTML = presHistoric.map((e, i) => {
+      const d    = new Date(e.createdAt).toLocaleDateString('en', { month:'short', year:'2-digit' });
+      const isLast = i === presHistoric.length - 1;
+      return `<span class="sim-chip${isLast ? ' sim-chip-latest' : ''}">${d} · ${(e.votesCount||0).toLocaleString()} v</span>`;
+    }).join('');
+  }
+
+  // Per-candidate: how many votes needed, how many more needed
+  const tbody = document.getElementById('presSimBody');
+  if (tbody) {
+    tbody.innerHTML = candidates.map((c, i) => {
+      const needed   = toWin;
+      const current  = c.votes;
+      const stillNeed = Math.max(0, needed - current);
+      const pct      = totalVotes > 0 ? ((current / totalVotes) * 100).toFixed(1) : '—';
+      const projPct  = expectedVoters > 0 ? ((current / expectedVoters) * 100).toFixed(1) : '—';
+      const isWin    = c.isElected;
+      const colorDot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c.color};margin-right:6px;vertical-align:middle;"></span>`;
+      const partyStr = c.partyInfo ? `<span style="color:var(--text3);font-size:.75em"> · ${c.partyInfo.name}</span>` : '';
+      const stillNeedStr = isWin
+        ? `<span style="color:#22c55e;font-weight:600">✓ Won</span>`
+        : stillNeed === 0
+        ? `<span style="color:#22c55e">0</span>`
+        : `<span style="color:#e8c97a">${stillNeed.toLocaleString()}</span>`;
+      return `<tr>
+        <td>${colorDot}${c.userData.username}${partyStr}</td>
+        <td>${current.toLocaleString()}</td>
+        <td>${pct}%</td>
+        <td>${projPct}%</td>
+        <td>${stillNeedStr}</td>
+      </tr>`;
+    }).join('');
+  }
+}
+
+function onPresSimInput() {
+  if (window._lastPresData) {
+    renderPresSimulator(window._lastPresData.candidates, window._lastPresData.totalVotes, window._lastPresData.election);
+  }
+}
+
+/* ── HISTORIC PRESIDENTIAL WINNERS ── */
+async function renderPresidentialHistoricWinners(currentElectionId) {
+  const panel = document.getElementById('presHistoricPanel');
+  if (!panel) return;
+
+  const presidentialElections = _electionHistory
+    .filter(e => e.type === 'president')
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  if (presidentialElections.length < 2) { panel.style.display = 'none'; return; }
+  panel.style.display = '';
+
+  const tbody = document.getElementById('presHistoricBody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="5" style="color:var(--text3);padding:8px;">Loading…</td></tr>';
+
+  const rows = [];
+  for (const e of presidentialElections.slice(0, 8)) {
+    if (e._id === currentElectionId) continue;
+    try {
+      const data = await localFetch('/election', { id: e._id }, { useCache: true, ttl: CACHE_TTL_LONG });
+      if (!data?.candidates) continue;
+      const winner = data.candidates.find(c => c.isElected);
+      if (!winner) continue;
+      const userData = await localFetch('/user', { id: winner.user || winner.userId }, { useCache: true, ttl: CACHE_TTL_LONG });
+      const totalV   = data.votesCount || data.candidates.reduce((s, c) => s + (c.voteCount || 0), 0);
+      const winVotes = data.votes
+        ? (data.votes[String(winner.user || winner.userId)] ?? winner.voteCount ?? 0)
+        : (winner.voteCount ?? 0);
+      const pct = totalV > 0 ? ((winVotes / totalV) * 100).toFixed(1) : '—';
+      const runnerUp = data.candidates.filter(c => !c.isElected)
+        .sort((a, b) => {
+          const av = data.votes ? (data.votes[String(a.user||a.userId)]??a.voteCount??0) : (a.voteCount??0);
+          const bv = data.votes ? (data.votes[String(b.user||b.userId)]??b.voteCount??0) : (b.voteCount??0);
+          return bv - av;
+        })[0];
+      let runnerUpName = '—';
+      if (runnerUp) {
+        const ru = await localFetch('/user', { id: runnerUp.user || runnerUp.userId }, { useCache: true, ttl: CACHE_TTL_LONG });
+        runnerUpName = ru?.username || '—';
+      }
+      const partyInfo = winner.party ? { name: _partyNamesMap.get(winner.party) || '' } : null;
+      const date = new Date(e.createdAt).toLocaleDateString('en', { month: 'short', year: 'numeric' });
+      rows.push({ date, username: userData?.username || '—', partyInfo, winVotes, pct, totalV, runnerUpName });
+    } catch (_) {}
+  }
+
+  if (!rows.length) { panel.style.display = 'none'; return; }
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td style="color:var(--text3)">${r.date}</td>
+      <td style="font-weight:600">👤 ${r.username}</td>
+      <td>${r.partyInfo?.name ? `<span style="color:var(--text2)">${r.partyInfo.name}</span>` : '—'}</td>
+      <td>${r.winVotes.toLocaleString()} <span class="party-pct">(${r.pct}%)</span></td>
+      <td style="color:var(--text3)">${r.runnerUpName}</td>
+    </tr>`).join('');
+}
 /* ── CONGRESS ELECTION ── */
 async function loadCongressElection(election) {
   document.getElementById('timelinePanel').style.display = '';
@@ -1349,6 +1543,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('fullscreenBtn')?.addEventListener('click', openParliamentFullscreen);
   // 5. Simulator slider
   document.getElementById('simExpectedVotersInput')?.addEventListener('input', onExpectedVotersChange);
+  document.getElementById('presSimVoters')?.addEventListener('input', onPresSimInput);
   document.getElementById('overlayClose')?.addEventListener('click', closeParliamentFullscreen);
   document.getElementById('parliamentOverlay')?.addEventListener('click', e => {
     if (e.target === document.getElementById('parliamentOverlay')) closeParliamentFullscreen();
