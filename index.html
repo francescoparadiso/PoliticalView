@@ -63,7 +63,7 @@
         <div class="stat-value skeleton-val" id="stat-parties">—</div>
         <div class="stat-sub">Represented</div>
       </div>
-      <div class="stat">
+      <div class="stat stat-totalvotes-highlight">
         <div class="stat-label">Total votes</div>
         <div class="stat-value skeleton-val" id="stat-totalvotes">—</div>
         <div class="stat-sub">In this election</div>
@@ -195,15 +195,17 @@
       <div class="main-grid">
         <!-- Parliament -->
         <div class="panel">
-          <div class="panel-head">
+          <div class="panel-head" style="flex-wrap: nowrap; gap: 8px;">
             <div class="panel-icon">🏛</div>
-            <h2>Parliament Composition</h2>
-            <span class="badge-count" id="badgeCount">—</span>
-            <div class="panel-actions" style="margin-left:auto;display:flex;gap:6px;">
+            <h2 style="white-space: nowrap;">Parliament Composition</h2>
+            <span class="badge-count" id="badgeCount" style="margin-left: 0;">—</span>
+            <span class="badge-status" id="congressStatusBadge" style="margin-left: 8px;"></span>
+            <div class="panel-actions" style="margin-left: auto; display: flex; gap: 6px; flex-shrink: 0;">
               <button class="action-btn" id="fullscreenBtn" title="Fullscreen">⛶</button>
               <button class="action-btn" id="exportCsvBtn" title="Export CSV">📥 Export CSV</button>
             </div>
           </div>
+          <div id="congressCountdown" class="pres-countdown" style="margin-bottom:12px;"></div>
           <!-- Skeleton parliament -->
           <div id="parliamentSkeleton" class="parliament-skeleton">
             <div class="parl-sk-arc"></div>
