@@ -595,6 +595,33 @@ body::after{content:'';position:fixed;inset:0;background-image:url("data:image/s
   color: var(--text3);
   margin-top: 12px;
 }
+/* ── KOFI BUTTON IN HEADER ── */
+.kofi-btn-top {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;                        /* spazio tra ☕ e testo */
+  background: linear-gradient(135deg, #ff5e5b, #ff3b30);
+  color: #fff;
+  font-family: 'Sora', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  padding: 8px 16px;
+  border-radius: 20px;             /* pill button */
+  text-decoration: none;
+  transition: transform 0.15s, box-shadow 0.2s, opacity 0.2s;
+  box-shadow: 0 2px 8px rgba(255, 59, 48, 0.3);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.kofi-btn-top:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 14px rgba(255, 59, 48, 0.45);
+  color: #fff;
+}
+.kofi-btn-top:active {
+  transform: scale(0.97);
+}
 /* Responsive */
 @media(max-width:900px) {
   .sim-metrics { grid-template-columns:repeat(3,1fr); }
