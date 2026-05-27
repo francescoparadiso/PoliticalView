@@ -4,6 +4,44 @@ const API_BASE = 'https://politicalview-proxy.fra-paradiso2.workers.dev/cache';
 const APP_BASE = 'https://app.warera.io';
 
 
+
+/* ═══ THEME (light / dark) ═══ */
+function getTheme() { return document.documentElement.getAttribute('data-theme') || 'dark'; }
+function applyTheme(t) {
+  document.documentElement.setAttribute('data-theme', t);
+  localStorage.setItem('we_theme', t);
+  const b = document.getElementById('themeToggle');
+  if (b) b.textContent = t === 'dark' ? '☀️' : '🌙';
+}
+function initTheme() {
+  applyTheme(localStorage.getItem('we_theme') ||
+    (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'));
+}
+function toggleTheme() {
+  const newTheme = getTheme() === 'dark' ? 'light' : 'dark';
+  applyTheme(newTheme);
+
+  // Refresh the active view so all charts/SVG re-render with new theme colors
+  setTimeout(() => {
+    if (document.getElementById('congress-view').style.display !== 'none' && window._currentCongressElectionId) {
+      loadElection(window._currentCongressElectionId);
+    } else if (document.getElementById('president-view').style.display !== 'none' && window._lastPresData?.election) {
+      loadPresidentialElection(window._lastPresData.election);
+    }
+  }, 50);
+}
+function chartTheme() {
+  const L = getTheme() === 'light';
+  return {
+    tt: { backgroundColor: L ? '#fff' : '#0f1521', borderColor: L ? 'rgba(155,115,45,.4)' : 'rgba(197,150,74,.3)', borderWidth: 1, titleColor: L ? '#b8860b' : '#e8c97a', bodyColor: L ? '#4a5568' : '#8892a4', padding: 10, cornerRadius: 6 },
+    tick: L ? '#6b7280' : '#535e72',
+    tick2: L ? '#374151' : '#8892a4',
+    grid: L ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.04)',
+    border: L ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.07)',
+    legend: L ? '#374151' : '#8892a4',
+  };
+}
+
 const PALETTE = [
   '#3b82f6', '#22c55e', '#eab308', '#ef4444', '#a855f7',
   '#f97316', '#06b6d4', '#ec4899', '#84cc16', '#f43f5e',
@@ -128,8 +166,6 @@ async function localFetch(path, params = {}, { useCache = true, ttl = null } = {
     const cached = cacheGet(key);
     if (cached) return cached;
   }
-
-  // Rimuovi "/api" dal percorso, perché gli endpoint di Perni non lo hanno
   const cleanPath = path.replace('/api/', '');
 
   const qs = new URLSearchParams(params).toString();
@@ -235,7 +271,6 @@ async function loadCountries() {
     create: false,
     sortField: { field: 'text', direction: 'asc' },
     maxOptions: null,
-    // Questa opzione fa sì che l'utente possa digitare per filtrare
     shouldSort: true,
   });
 
@@ -394,17 +429,22 @@ async function loadPartiesForCountry(countryId) {
 }
 /* ── TIMELINE ── */
 function renderTimeline(congressElections) {
-  if (congressElections.length < 2) return;
-
   const panel = document.getElementById('timelinePanel');
-  panel.style.display = '';
-  safeDestroy('timelineChart');
+  if (!congressElections || congressElections.length === 0) {
+    if (panel) panel.style.display = 'none';
+    return;
+  }
+  if (panel) panel.style.display = '';
 
+  safeDestroy('timelineChart');
   const labels = congressElections.map(e => new Date(e.createdAt).toLocaleDateString('it', { month: 'short', year: '2-digit' }));
   const electionIds = congressElections.map(e => e._id);
   const canvas = document.getElementById('timelineChart');
+  if (!canvas) return;
   const ctx = canvas.getContext('2d');
   _timelineElectionIds = electionIds;
+
+  const T = chartTheme(); // ✅ Usa i colori dinamici del tema
 
   _timelineChart = new Chart(ctx, {
     type: 'line',
@@ -416,36 +456,21 @@ function renderTimeline(congressElections) {
       plugins: {
         legend: { display: false },
         tooltip: {
-          backgroundColor: '#0f1521',
-          borderColor: 'rgba(197,150,74,.3)',
-          borderWidth: 1,
-          titleColor: '#e8c97a',
-          bodyColor: '#8892a4',
-          padding: 10,
-          cornerRadius: 6,
+          ...T.tt,
           callbacks: {
             title: items => `Elezione ${items[0].label}`,
             label: (item) => {
               if (!item.dataset.label) return '';
-              return ` ${item.dataset.label}: ${item.parsed.y} seggi`;
+              return `${item.dataset.label}: ${item.parsed.y} seggi`;
             }
           }
         },
       },
       scales: {
-        x: {
-          ticks: { color: '#535e72', font: { size: 11 } },
-          grid: { color: 'rgba(255,255,255,0.035)' },
-          border: { color: 'rgba(255,255,255,0.06)' },
-        },
-        y: {
-          beginAtZero: true,
-          ticks: { color: '#535e72', stepSize: 1 },
-          grid: { color: 'rgba(255,255,255,0.035)' },
-          border: { color: 'rgba(255,255,255,0.06)' },
-        },
+        x: { ticks: { color: T.tick, font: { size: 11 } }, grid: { color: T.grid }, border: { color: T.border } },
+        y: { beginAtZero: true, ticks: { color: T.tick, stepSize: 1 }, grid: { color: T.grid }, border: { color: T.border } }
       },
-      onClick: (evt, elements, chart) => {
+      onClick: (evt, elements) => {
         if (!elements.length) return;
         const idx = elements[0].index;
         const eid = electionIds[idx];
@@ -457,10 +482,95 @@ function renderTimeline(congressElections) {
       },
     },
   });
-
+  
   loadTimelineData(congressElections, electionIds);
 }
 
+async function loadCurrentGovernment(countryId) {
+  try {
+    const data = await localFetch('/government', { countryId });
+    const gov = data?.result?.data?.json || data;
+    if (!gov || !gov.president) return null;
+    return gov;
+  } catch (err) {
+    console.warn('Errore nel caricamento del governo:', err);
+    return null;
+  }
+}
+async function getGovernmentWithDetails(countryId) {
+  const gov = await loadCurrentGovernment(countryId);
+  if (!gov) return null;
+
+  const roleKeys = ['president', 'vicePresident', 'minOfDefense', 'minOfEconomy', 'minOfForeignAffairs'];
+  const userIds = roleKeys.map(k => gov[k]).filter(Boolean);
+  if (userIds.length === 0) return gov;
+
+  // Recupera i dettagli degli utenti in parallelo (usa localFetch)
+  const userPromises = userIds.map(uid => localFetch('/user', { id: uid }).catch(() => null));
+  const users = await Promise.all(userPromises);
+  const userMap = {};
+  userIds.forEach((uid, idx) => {
+    if (users[idx] && users[idx].username) userMap[uid] = users[idx];
+  });
+
+  // Arricchisce l'oggetto gov con i dati utente
+  roleKeys.forEach(key => {
+    const uid = gov[key];
+    if (uid && userMap[uid]) {
+      gov[key + 'Data'] = userMap[uid];
+    }
+  });
+  return gov;
+}
+function renderGovernment(gov) {
+  const panel = document.getElementById('governmentPanel');
+  const grid = document.getElementById('governmentGrid');
+  if (!gov || !gov.presidentData) {
+    if (panel) panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = '';
+
+  const roles = [
+    { key: 'president', label: 'President', dataKey: 'presidentData' },
+    { key: 'vicePresident', label: 'Vice President', dataKey: 'vicePresidentData' },
+    { key: 'minOfDefense', label: 'Minister of Defense', dataKey: 'minOfDefenseData' },
+    { key: 'minOfEconomy', label: 'Minister of Economy', dataKey: 'minOfEconomyData' },
+    { key: 'minOfForeignAffairs', label: 'Minister of Foreign Affairs', dataKey: 'minOfForeignAffairsData' }
+  ];
+
+  grid.innerHTML = roles.map(role => {
+    const userId = gov[role.key];
+    const user = gov[role.dataKey];
+    if (!userId || !user) return '';
+    const avatarHtml = user.avatarUrl
+      ? `<img src="${user.avatarUrl}" class="gov-avatar" alt="" loading="lazy">`
+      : `<div class="gov-avatar" style="display:flex;align-items:center;justify-content:center;background:var(--s3);">👤</div>`;
+    const username = user.username || userId;
+    return `
+      <div class="gov-card">
+        ${avatarHtml}
+        <div class="gov-info">
+          <div class="gov-role">${role.label}</div>
+          <div class="gov-name"><a href="${APP_BASE}/user/${userId}" target="_blank">${escapeHtml(username)}</a></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  document.getElementById('govBadge').textContent = `${roles.length} roles`;
+}
+
+// Piccola utility per evitare XSS
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/[&<>]/g, function(m) {
+    if (m === '&') return '&amp;';
+    if (m === '<') return '&lt;';
+    if (m === '>') return '&gt;';
+    return m;
+  });
+}
 async function loadTimelineData(elections, electionIds) {
   const partySeatsPerElection = [];
 
@@ -482,7 +592,6 @@ async function loadTimelineData(elections, electionIds) {
   const allPids = new Set();
   partySeatsPerElection.forEach(m => Object.keys(m).forEach(pid => allPids.add(pid)));
 
-  // ---- NUOVO: precarica i nomi dei partiti se mancano ----
   for (const pid of allPids) {
     if (pid === 'independent') continue;
     if (!_partyNamesMap.has(pid)) {
@@ -619,17 +728,30 @@ function renderCharts(electedParties) {
     borderWidth: 1, titleColor: '#e8c97a', bodyColor: '#8892a4',
     padding: 10, cornerRadius: 6
   };
+  const isLight = getTheme() === 'light';
+  const chartBorder = isLight ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.12)';
+  const T = chartTheme();
 
   _seatsChart = new Chart(document.getElementById('seatsChart').getContext('2d'), {
     type: 'doughnut',
-    data: { labels: electedParties.map(p => p.name), datasets: [{ data: electedParties.map(p => p.seats), backgroundColor: colorsA, borderColor: '#0e1117', borderWidth: 3, hoverBorderColor: colors, hoverBorderWidth: 2 }] },
+    data: {
+      labels: electedParties.map(p => p.name),
+      datasets: [{
+        data: electedParties.map(p => p.seats),
+        backgroundColor: colorsA,
+        borderColor: chartBorder, // ✅ Contorno theme-aware
+        borderWidth: 2,
+        hoverBorderColor: colors,
+        hoverBorderWidth: 3
+      }]
+    },
     options: {
       responsive: true, maintainAspectRatio: false,
       cutout: '65%', rotation: -90, circumference: 180,
       plugins: {
         legend: { display: false },
-        tooltip: { ...tt, callbacks: { title: i => i[0].label, label: i => ` ${i.raw} seggi (${((i.raw / totalSeats) * 100).toFixed(1)}%) · ${electedParties[i.dataIndex].votes.toLocaleString()} voti` } },
-        centerText: { text: `${totalSeats}`, sub: 'seggi', fontSize: 20, color: '#e8c97a', subColor: '#8892a4' },
+        tooltip: { ...T.tt, callbacks: { title: i => i[0].label, label: i => `${i.raw} seggi (${((i.raw / totalSeats) * 100).toFixed(1)}%) · ${electedParties[i.dataIndex].votes.toLocaleString()} voti` } },
+        centerText: { text: `${totalSeats}`, sub: 'seggi', fontSize: 20, color: T.tt.titleColor, subColor: T.tt.bodyColor },
       },
       onClick: (_, el) => { if (el.length) window.open(`${APP_BASE}/party/${electedParties[el[0].index].id}`, '_blank'); }
     },
@@ -637,13 +759,23 @@ function renderCharts(electedParties) {
 
   _membersChart = new Chart(document.getElementById('membersChart').getContext('2d'), {
     type: 'bar',
-    data: { labels: electedParties.map(p => p.abbr), datasets: [{ data: electedParties.map(p => Number(p.members) || 0), backgroundColor: colorsA, borderColor: colors, borderWidth: 1.5, borderRadius: 5, borderSkipped: false }] },
+    data: {
+      labels: electedParties.map(p => p.abbr),
+      datasets: [{
+        data: electedParties.map(p => Number(p.members) || 0),
+        backgroundColor: colorsA,
+        borderColor: isLight ? 'rgba(0,0,0,0.25)' : colors, // ✅ Contorno scuro in light, colore partito in dark
+        borderWidth: 1.5,
+        borderRadius: 5,
+        borderSkipped: false
+      }]
+    },
     options: {
       responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false }, tooltip: { ...tt, callbacks: { title: i => electedParties[i[0].dataIndex].name, label: i => `${i.raw} iscritti` } } },
+      plugins: { legend: { display: false }, tooltip: { ...T.tt, callbacks: { title: i => electedParties[i[0].dataIndex].name, label: i => `${i.raw} iscritti` } } },
       scales: {
-        y: { beginAtZero: true, ticks: { color: '#535e72' }, grid: { color: 'rgba(255,255,255,0.035)' }, border: { color: 'rgba(255,255,255,0.06)' } },
-        x: { ticks: { color: '#8892a4', font: { size: 11 } }, grid: { display: false }, border: { color: 'rgba(255,255,255,0.06)' } }
+        y: { beginAtZero: true, ticks: { color: T.tick }, grid: { color: T.grid }, border: { color: T.border } },
+        x: { ticks: { color: T.tick, font: { size: 11 } }, grid: { display: false }, border: { color: T.border } }
       },
       onClick: (_, el) => { if (el.length) window.open(`${APP_BASE}/party/${electedParties[el[0].index].id}`, '_blank'); }
     },
@@ -655,41 +787,104 @@ function renderAllPartiesChart(allParties) {
   safeDestroy('allPartiesChart');
   if (!allParties.length) return;
 
+  const canvas = document.getElementById('allPartiesChart');
+  const sk = canvas?.previousElementSibling;
+  if (sk && sk.classList.contains('sk-chart-block')) sk.style.display = 'none';
+  if (canvas) canvas.style.display = '';
+
   const sorted = [...allParties].sort((a, b) => b.members - a.members);
-
-  const tt = {
-    backgroundColor: '#0f1521', borderColor: 'rgba(197,150,74,.3)',
-    borderWidth: 1, titleColor: '#e8c97a', bodyColor: '#8892a4',
-    padding: 10, cornerRadius: 6
-  };
-
-  const barH = Math.max(24, Math.min(34, 300 / sorted.length));
-  const totalH = Math.max(240, sorted.length * (barH + 6));
   const wrap = document.getElementById('allPartiesChartWrap');
-  wrap.style.height = totalH + 'px';
+  if (wrap) wrap.style.height = Math.max(260, sorted.length * 32) + 'px';
 
-  _allPartiesChart = new Chart(document.getElementById('allPartiesChart').getContext('2d'), {
+  const L = getTheme() === 'light';
+  const { tt, tick, grid, border: gb } = chartTheme();
+
+  // Legge i colori dinamici dal CSS (variabili del tema)
+  const rootStyles = getComputedStyle(document.documentElement);
+  const goldColor = rootStyles.getPropertyValue('--gold2').trim() || '#e8c97a';
+  const textDark = rootStyles.getPropertyValue('--text').trim() || (L ? '#1a1e2e' : '#dde2ec');
+  const textLight = rootStyles.getPropertyValue('--text2').trim() || '#8892a4';
+
+  // Colori barre: più intensi per partiti con seggi
+  const bg = sorted.map(p => {
+    if (p.seats > 0) {
+      return p.color + (L ? 'ee' : 'ff');
+    } else {
+      return p.color + (L ? '33' : '1a');
+    }
+  });
+
+  const brd = sorted.map(p => {
+    if (p.seats > 0) {
+      return L ? 'rgba(0,0,0,0.7)' : goldColor + 'cc';
+    } else {
+      return L ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.1)';
+    }
+  });
+
+  _allPartiesChart = new Chart(canvas.getContext('2d'), {
     type: 'bar',
     data: {
-      labels: sorted.map(p => p.name), datasets: [{
+      labels: sorted.map(p => p.name),
+      datasets: [{
         data: sorted.map(p => Number(p.members) || 0),
-        backgroundColor: sorted.map(p => p.seats > 0 ? p.color + 'ff' : p.color + '33'),
-        borderColor: sorted.map(p => p.seats > 0 ? p.color : p.color + '44'),
-        borderWidth: 1.5, borderRadius: 4, borderSkipped: false,
+        backgroundColor: bg,
+        borderColor: brd,
+        borderWidth: 1.5,
+        borderRadius: 4,
+        borderSkipped: false
       }]
     },
     options: {
       indexAxis: 'y',
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false }, tooltip: { ...tt, callbacks: { title: i => sorted[i[0].dataIndex].name, label: i => { const p = sorted[i.dataIndex]; return `${i.raw} iscritti` + (p.seats > 0 ? ` · ${p.seats} seggi 🏛` : ''); } } } },
-      scales: {
-        x: { beginAtZero: true, ticks: { color: '#535e72', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.035)' }, border: { color: 'rgba(255,255,255,0.06)' } },
-        y: { ticks: { color: ctx => sorted[ctx.index]?.seats > 0 ? '#dde2ec' : '#535e72', font: ctx => ({ size: 11, weight: sorted[ctx.index]?.seats > 0 ? '600' : '400' }) }, grid: { display: false }, border: { color: 'rgba(255,255,255,0.06)' } },
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          ...tt,
+          callbacks: {
+            title: i => sorted[i[0].dataIndex].name,
+            label: i => {
+              const p = sorted[i.dataIndex];
+              return i.raw + ' iscritti' + (p.seats > 0 ? ' · ' + p.seats + ' seggi 🏛' : '');
+            }
+          }
+        }
       },
-      onClick: (_, el) => { if (el.length) window.open(`${APP_BASE}/party/${sorted[el[0].index].id}`, '_blank'); }
-    },
+      scales: {
+        x: {
+          beginAtZero: true,
+          ticks: { color: tick, font: { size: 11 } },
+          grid: { color: grid },
+          border: { color: gb }
+        },
+        y: {
+          ticks: {
+            color: ctx => {
+              const party = sorted[ctx.index];
+              if (!party) return tick;
+              if (party.seats > 0) {
+                // Usa colore dinamico: in light nero, in dark oro (dalla variabile CSS)
+                return L ? textDark : goldColor;
+              }
+              return textLight;
+            },
+            font: ctx => {
+              const party = sorted[ctx.index];
+              return { weight: party?.seats > 0 ? 'bold' : 'normal', size: 11 };
+            }
+          },
+          grid: { display: false },
+          border: { color: gb }
+        }
+      },
+      onClick: (_, el) => {
+        if (el.length) window.open(APP_BASE + '/party/' + sorted[el[0].index].id, '_blank');
+      }
+    }
   });
-  document.getElementById('badgeAllParties').textContent = `${allParties.length} partiti`;
+  document.getElementById('badgeAllParties').textContent = allParties.length + ' partiti';
 }
 async function loadPartyColors(csvUrl) {
   try {
@@ -991,7 +1186,15 @@ async function loadPresidentialElection(election) {
   safeDestroy('presidentChart');
   _presidentChart = new Chart(document.getElementById('presidentChart').getContext('2d'), {
     type: 'bar',
-    data: { labels: candidates.map(c => c.userData.username), datasets: [{ data: candidates.map(c => c.votes), backgroundColor: candidates.map(c => c.color + 'cc'), borderColor: candidates.map(c => c.color), borderWidth: 1.5, borderRadius: 6, borderSkipped: false }] },
+    data: { labels: candidates.map(c => c.userData.username),
+           datasets: [{
+      data: candidates.map(c => c.votes),
+      backgroundColor: candidates.map(c => c.color + 'cc'),
+      borderColor: getTheme() === 'light' ? 'rgba(0,0,0,0.2)' : candidates.map(c => c.color), // ✅ Contorno theme-aware
+      borderWidth: 1.5,
+      borderRadius: 6,
+      borderSkipped: false
+    }]},
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: false }, tooltip: { backgroundColor: '#0f1521', borderColor: 'rgba(197,150,74,.3)', borderWidth: 1, titleColor: '#e8c97a', bodyColor: '#8892a4', padding: 10, cornerRadius: 6, callbacks: { title: i => candidates[i[0].dataIndex].userData.username, label: i => ` ${i.raw.toLocaleString()} voti (${totalVotes ? ((i.raw / totalVotes) * 100).toFixed(1) + '%' : '—'})` } } },
@@ -1216,46 +1419,47 @@ async function loadCongressElection(election) {
   const elected = election.candidates.filter(c => c.isElected);
 
   // --- GESTIONE ELEZIONE IN CORSO (nessun eletto) ---
-if (isOngoing && elected.length === 0) {
-  // Calcolo seggi totali (come prima)
-  const population = _currentCountryData?.rankings?.countryActivePopulation?.value || null;
-  let totalSeats = 30;
-  if (population) {
-    totalSeats = Math.min(50, Math.floor(population / 20) + 2);
-  } else {
-    const lastCongress = _electionHistory
-      .filter(e => e.type === 'congress' && e.candidates?.some(c => c.isElected))
-      .pop();
-    if (lastCongress) totalSeats = lastCongress.candidates.filter(c => c.isElected).length;
-  }
+  if (isOngoing && elected.length === 0) {
+    // Calcolo seggi totali (come prima)
+    const population = _currentCountryData?.rankings?.countryActivePopulation?.value || null;
+    let totalSeats = 30;
+    if (population) {
+      totalSeats = Math.min(50, Math.floor(population / 20) + 2);
+    } else {
+      const lastCongress = _electionHistory
+        .filter(e => e.type === 'congress' && e.candidates?.some(c => c.isElected))
+        .pop();
+      if (lastCongress) totalSeats = lastCongress.candidates.filter(c => c.isElected).length;
+    }
 
-  // Nascondi i grafici e i bottoni inutili
-  document.getElementById('seatsChartWrap').style.display = 'none';
-  document.getElementById('membersChartWrap').style.display = 'none';
-  document.getElementById('allPartiesRow').style.display = 'none';
-  document.getElementById('fullscreenBtn').style.display = 'none';
-  document.getElementById('exportCsvBtn').style.display = 'none';
+    // Nascondi i grafici e i bottoni inutili
+    document.getElementById('seatsChartWrap').style.display = 'none';
+    document.getElementById('membersChartWrap').style.display = 'none';
+    document.getElementById('allPartiesRow').style.display = 'none';
+    document.getElementById('fullscreenBtn').style.display = 'none';
+    document.getElementById('exportCsvBtn').style.display = 'none';
 
-  // Statistiche
-  fillStat('stat-seats', totalSeats);
-  fillStat('stat-parties', '—');
-  fillStat('stat-majority', Math.floor(totalSeats / 2) + 1);
-  fillStat('stat-leader', '—');
-  const enpEl = document.getElementById('stat-enp-label');
-  if (enpEl) enpEl.textContent = '—';
+    // Statistiche
+    fillStat('stat-seats', totalSeats);
+    fillStat('stat-parties', '—');
+    fillStat('stat-majority', Math.floor(totalSeats / 2) + 1);
+    fillStat('stat-leader', '—');
+    const enpEl = document.getElementById('stat-enp-label');
+    if (enpEl) enpEl.textContent = '—';
 
-  // Parlamento vuoto (come prima)
-  const vacantParty = {
-    id: 'vacant', name: 'Seggi vacanti', abbr: 'VAC', seats: totalSeats,
-    members: 0, votes: 0, color: '#2a2f3a', users: []
-  };
-  Parliament.render({
-    container: document.getElementById('parliamentContainer'),
-    legendContainer: document.getElementById('legendContainer'),
-    parties: [vacantParty],
-    tooltip: document.getElementById('tooltip'),
-  });
-  document.getElementById('legendContainer').innerHTML = `
+    // Parlamento vuoto (come prima)
+    const vacantParty = {
+      id: 'vacant', name: 'Seggi vacanti', abbr: 'VAC', seats: totalSeats,
+      members: 0, votes: 0, color: '#2a2f3a', users: []
+    };
+    Parliament.render({
+      container: document.getElementById('parliamentContainer'),
+      legendContainer: document.getElementById('legendContainer'),
+      parties: [vacantParty],
+      tooltip: document.getElementById('tooltip'),
+    });
+observeParliamentResize(); 
+    document.getElementById('legendContainer').innerHTML = `
     <div class="leg-item">
       <span class="leg-dot" style="background:#2a2f3a"></span>
       <span>🗳️ Elezione in corso – seggi non assegnati</span>
@@ -1263,11 +1467,11 @@ if (isOngoing && elected.length === 0) {
     </div>
   `;
 
-  // --- NUOVO: Grande numero con voti totali nella tabella ---
-  const totalVotesNow = totalVotes || 0;
-  const partyTableBody = document.getElementById('partyTableBody');
-  if (partyTableBody) {
-    partyTableBody.innerHTML = `
+    // --- NUOVO: Grande numero con voti totali nella tabella ---
+    const totalVotesNow = totalVotes || 0;
+    const partyTableBody = document.getElementById('partyTableBody');
+    if (partyTableBody) {
+      partyTableBody.innerHTML = `
       <tr class="total-votes-big">
         <td colspan="6" style="text-align: center; padding: 32px 16px;">
           <div class="big-votes-number">${totalVotesNow.toLocaleString()}</div>
@@ -1276,15 +1480,15 @@ if (isOngoing && elected.length === 0) {
         </td>
       </tr>
     `;
-  }
-  document.getElementById('partyTable').style.display = '';
-  document.getElementById('tableSkeleton').style.display = 'none';
-  hideSkeleton();
+    }
+    document.getElementById('partyTable').style.display = '';
+    document.getElementById('tableSkeleton').style.display = 'none';
+    hideSkeleton();
 
-  setStatus('Elezione in corso – aggiornamento voti in tempo reale', 'loading');
-  document.getElementById('badgeCount').textContent = `Elezione in corso · ${totalSeats} seggi`;
-  return;
-}
+    setStatus('Elezione in corso – aggiornamento voti in tempo reale', 'loading');
+    document.getElementById('badgeCount').textContent = `Elezione in corso · ${totalSeats} seggi`;
+    return;
+  }
 
   // --- SE L'ELEZIONE È CONCLUSA (o comunque ci sono eletti) ---
   if (!elected.length) {
@@ -1293,7 +1497,7 @@ if (isOngoing && elected.length === 0) {
   // Riabilita i bottoni (potrebbero essere stati nascosti da una precedente elezione in corso)
   document.getElementById('fullscreenBtn').style.display = 'inline-flex';
   document.getElementById('exportCsvBtn').style.display = 'inline-flex';
-  
+
   const partySeatsMap = {}, partyUsersMap = {};
   elected.forEach(c => {
     const pid = String(c.party || c.partyId || 'independent');
@@ -1394,7 +1598,7 @@ if (isOngoing && elected.length === 0) {
     parties: electedParties,
     tooltip: document.getElementById('tooltip'),
   });
-
+  observeParliamentResize();
   renderPartyTable(electedParties, totalSeats);
   renderCharts(electedParties);
   updateTimelineHighlight();
@@ -1548,7 +1752,19 @@ function onExpectedVotersChange() {
     renderSimulator(window._lastAllParties, totalSeats);
   }
 }
-
+function observeParliamentResize() {
+  const container = document.getElementById('parliamentContainer');
+  if (!container) return;
+  if (window._parliamentResizeObserver) window._parliamentResizeObserver.disconnect();
+  
+  const observer = new ResizeObserver(() => {
+    if (window._lastParliamentData && container.clientWidth > 0) {
+      Parliament.render(window._lastParliamentData);
+    }
+  });
+  observer.observe(container);
+  window._parliamentResizeObserver = observer;
+}
 /* ── MAIN ENTRY ── */
 async function loadElection(id) {
   const electionId = id || document.getElementById('electionIdInput').value.trim();
@@ -1619,8 +1835,9 @@ async function loadElection(id) {
 }
 
 /* ── BOOT ── */
-/* ── BOOT ── */
 document.addEventListener('DOMContentLoaded', () => {
+  initTheme();
+  document.getElementById('themeToggle')?.addEventListener('click', toggleTheme);
   // 1. Carica i colori dal CSV globale
   loadPartyColors('parties_6813b6d446e731854c7ac7a2.csv').then(async () => {
     console.log(`🎨 ${_partyColorMap.size} colors loaded from CSV`);
@@ -1635,41 +1852,46 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     loadElectionsHistory();
+    const govData = await getGovernmentWithDetails(_currentCountryId);
+renderGovernment(govData);
   });
 
   // 2. Listener cambio nazione
-  document.getElementById('countrySelect').addEventListener('change', async function () {
-    const newCountryId = this.value;
-    if (newCountryId === _currentCountryId) return;
+ document.getElementById('countrySelect').addEventListener('change', async function () {
+  const newCountryId = this.value;
+  if (newCountryId === _currentCountryId) return;
 
-    _currentCountryId = newCountryId;
-    _electionHistory = [];
-    _currentCongressElectionId = null;
-    _partyColorMap.clear();       // opzionale ma consigliato
-    _partyNamesMap.clear();
-    // Recupera i dati del paese (popolazione attiva, etc.)
-    try {
-      const data = await localFetch('/countries', {}, { useCache: false });
-      _currentCountryData = (data?.items || []).find(c => c._id === newCountryId) || null;
-    } catch (_) {
-      _currentCountryData = null;
+  _currentCountryId = newCountryId;
+  _electionHistory = [];
+  _currentCongressElectionId = null;
+  _partyColorMap.clear();
+  _partyNamesMap.clear();
+
+  try {
+    const data = await localFetch('/countries', {}, { useCache: false });
+    _currentCountryData = (data?.items || []).find(c => c._id === newCountryId) || null;
+  } catch (_) {
+    _currentCountryData = null;
+  }
+
+  setStatus('Loading…', 'loading');
+
+  try {
+    await loadPartiesForCountry(_currentCountryId);
+    await loadElectionsHistory();
+
+    // 🔁 Carica il governo per il NUOVO paese
+    const govData = await getGovernmentWithDetails(_currentCountryId);
+    renderGovernment(govData);
+
+    if (window.umami) {
+      window.umami.track('country-change', { country: _currentCountryId });
     }
-
-
-    setStatus('Loading…', 'loading');
-
-    try {
-      await loadPartiesForCountry(_currentCountryId);
-      await loadElectionsHistory();
-
-      if (window.umami) {
-        window.umami.track('country-change', { country: _currentCountryId });
-      }
-    } catch (err) {
-      console.error('Error switching country:', err);
-      setStatus('Error loading data', 'error');
-    }
-  });
+  } catch (err) {
+    console.error('Error switching country:', err);
+    setStatus('Error loading data', 'error');
+  }
+});
 
   // 3. Listener per il caricamento elezioni
   document.getElementById('loadBtn').addEventListener('click', () => loadElection());

@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes">
   <title>WarEra · Political View</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link
@@ -24,6 +24,8 @@
     <!-- HEADER -->
     <header class="header">
       <div class="header-brand">
+        <button id="themeToggle" class="theme-toggle-btn" title="Switch to light mode"
+          aria-label="Toggle theme">☀️</button>
         <div class="header-logo">🏛️</div>
         <div>
           <div class="header-title">Political View</div>
@@ -48,8 +50,8 @@
         </div>
         <button class="btn-load" id="loadBtn">▶ Load</button>
         <span class="badge-status loading" id="statusBadge">Waiting…</span>
-        <a href="https://ko-fi.com/frappa10" target="_blank" class="kofi-btn-top"
-          title="Supportami su Ko-fi">☕ Support me</a>
+        <a href="https://ko-fi.com/frappa10" target="_blank" class="kofi-btn-top" title="Supportami su Ko-fi">☕ Support
+          me</a>
       </div>
 
     </header>
@@ -117,6 +119,15 @@
         <!-- Margin of victory -->
         <div id="presMargin" class="pres-margin" style="display:none;"></div>
         <div id="pres-winner-banner" class="pres-winner" style="display:none;"></div>
+        <!-- Government panel -->
+        <div class="panel government-panel" id="governmentPanel" style="display:none; margin-bottom:20px;">
+          <div class="panel-head">
+            <div class="panel-icon">🏛️</div>
+            <h2>Current Government</h2>
+            <span class="badge-count" id="govBadge"></span>
+          </div>
+          <div class="government-grid" id="governmentGrid"></div>
+        </div>
         <div id="pres-race" class="pres-race"></div>
         <div class="pres-chart-wrap">
           <canvas id="presidentChart" role="img" aria-label="Presidential election votes"></canvas>
