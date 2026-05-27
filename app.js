@@ -26,7 +26,7 @@ function toggleTheme() {
     if (document.getElementById('congress-view').style.display !== 'none' && window._currentCongressElectionId) {
       loadElection(window._currentCongressElectionId);
     } else if (document.getElementById('president-view').style.display !== 'none' && window._lastPresData?.election) {
-      loadPresidentialElection(window._lastPresData.election);
+      loadPresidentialElection(window._lastPresData.election, _currentIsLatestPresidential);
     }
   }, 50);
 }
@@ -111,6 +111,7 @@ let _historicTurnouts = [];       // [{ electionId, totalVotes, date }]
 let _lastAllParties = null;   // per il simulatore, tutti i partiti
 let _congressCountdownInterval = null;
 let _latestPresidentialElectionId = null;
+let _currentIsLatestPresidential = false
 /* ── ABBR INTELLIGENTE ── */
 function makeAbbr(name) {
   // Se il nome è mancante o non è una stringa, restituisci subito un segnaposto
@@ -393,7 +394,7 @@ async function loadElectionsHistory() {
       opt.value = e._id;
       const emoji = e.type === 'president' ? '👤' : '🏛️';
       const date = new Date(e.createdAt).toLocaleDateString('it');
-      opt.textContent = `${emoji} ${e.type === 'president' ? 'Presidenziale' : 'Congresso'} · ${date}`;
+      opt.textContent = `${emoji} ${e.type === 'president' ? 'Presidential' : 'Congress'} · ${date}`;
       select.appendChild(opt);
     });
 
@@ -1635,7 +1636,7 @@ async function loadCongressElection(election) {
   }
 
   renderSimulator(allParties, totalSeats);
-    // Nascondi il pannello governo per le elezioni congressuali
+  // Nascondi il pannello governo per le elezioni congressuali
   const panel = document.getElementById('governmentPanel');
   if (panel) panel.style.display = 'none';
 }
@@ -1829,6 +1830,7 @@ async function loadElection(id) {
       }
 
       const isLatestPresidential = (election.type === 'president' && election._id === _latestPresidentialElectionId);
+      _currentIsLatestPresidential = isLatestPresidential;   
       if (election.type === 'president') await loadPresidentialElection(election, isLatestPresidential);
       else if (election.type === 'congress') await loadCongressElection(election);
       else throw new Error(`Unknown election type: ${election.type}`);
