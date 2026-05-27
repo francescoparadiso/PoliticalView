@@ -110,7 +110,7 @@ let _currentCountryData = null;   // { population, name, ... }
 let _historicTurnouts = [];       // [{ electionId, totalVotes, date }]
 let _lastAllParties = null;   // per il simulatore, tutti i partiti
 let _congressCountdownInterval = null;
-
+let _latestPresidentialElectionId = null;
 /* ── ABBR INTELLIGENTE ── */
 function makeAbbr(name) {
   // Se il nome è mancante o non è una stringa, restituisci subito un segnaposto
@@ -399,6 +399,14 @@ async function loadElectionsHistory() {
 
     const congressElections = items.filter(e => e.type === 'congress');
     _currentCongressElectionId = congressElections.length > 0 ? congressElections[congressElections.length - 1]._id : null;
+    // Determina l'ultima elezione presidenziale
+    const presidentialElections = items.filter(e => e.type === 'president');
+    if (presidentialElections.length) {
+      const sortedPres = [...presidentialElections].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      _latestPresidentialElectionId = sortedPres[0]._id;
+    } else {
+      _latestPresidentialElectionId = null;
+    }
     renderTimeline(congressElections.slice(-6));
 
     if (items.length > 0) {
@@ -482,7 +490,7 @@ function renderTimeline(congressElections) {
       },
     },
   });
-  
+
   loadTimelineData(congressElections, electionIds);
 }
 
@@ -564,7 +572,7 @@ function renderGovernment(gov) {
 // Piccola utility per evitare XSS
 function escapeHtml(str) {
   if (!str) return '';
-  return str.replace(/[&<>]/g, function(m) {
+  return str.replace(/[&<>]/g, function (m) {
     if (m === '&') return '&amp;';
     if (m === '<') return '&lt;';
     if (m === '>') return '&gt;';
@@ -1030,7 +1038,7 @@ function renderPresidentialTurnoutChart(currentElectionId = null) {
   });
 }
 
-async function loadPresidentialElection(election) {
+async function loadPresidentialElection(election, isLatestPresidential) {
   document.getElementById('timelinePanel').style.display = 'none';
   showView('president');
   resetStats();
@@ -1186,15 +1194,17 @@ async function loadPresidentialElection(election) {
   safeDestroy('presidentChart');
   _presidentChart = new Chart(document.getElementById('presidentChart').getContext('2d'), {
     type: 'bar',
-    data: { labels: candidates.map(c => c.userData.username),
-           datasets: [{
-      data: candidates.map(c => c.votes),
-      backgroundColor: candidates.map(c => c.color + 'cc'),
-      borderColor: getTheme() === 'light' ? 'rgba(0,0,0,0.2)' : candidates.map(c => c.color), // ✅ Contorno theme-aware
-      borderWidth: 1.5,
-      borderRadius: 6,
-      borderSkipped: false
-    }]},
+    data: {
+      labels: candidates.map(c => c.userData.username),
+      datasets: [{
+        data: candidates.map(c => c.votes),
+        backgroundColor: candidates.map(c => c.color + 'cc'),
+        borderColor: getTheme() === 'light' ? 'rgba(0,0,0,0.2)' : candidates.map(c => c.color), // ✅ Contorno theme-aware
+        borderWidth: 1.5,
+        borderRadius: 6,
+        borderSkipped: false
+      }]
+    },
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: false }, tooltip: { backgroundColor: '#0f1521', borderColor: 'rgba(197,150,74,.3)', borderWidth: 1, titleColor: '#e8c97a', bodyColor: '#8892a4', padding: 10, cornerRadius: 6, callbacks: { title: i => candidates[i[0].dataIndex].userData.username, label: i => ` ${i.raw.toLocaleString()} voti (${totalVotes ? ((i.raw / totalVotes) * 100).toFixed(1) + '%' : '—'})` } } },
@@ -1214,6 +1224,15 @@ async function loadPresidentialElection(election) {
   window._lastPresData = { candidates, totalVotes, election };
   renderPresSimulator(candidates, totalVotes, election);
   document.getElementById('badgeCount').textContent = `Presidenziale · ${totalVotes} voti`;
+
+  // Mostra il governo solo se questa è l'ultima elezione presidenziale
+  if (isLatestPresidential) {
+    const govData = await getGovernmentWithDetails(election.country || _currentCountryId);
+    renderGovernment(govData);
+  } else {
+    const panel = document.getElementById('governmentPanel');
+    if (panel) panel.style.display = 'none';
+  }
 }
 /* ── PRESIDENTIAL SIMULATOR ── */
 function renderPresSimulator(candidates, totalVotes, election) {
@@ -1458,7 +1477,7 @@ async function loadCongressElection(election) {
       parties: [vacantParty],
       tooltip: document.getElementById('tooltip'),
     });
-observeParliamentResize(); 
+    observeParliamentResize();
     document.getElementById('legendContainer').innerHTML = `
     <div class="leg-item">
       <span class="leg-dot" style="background:#2a2f3a"></span>
@@ -1616,6 +1635,9 @@ observeParliamentResize();
   }
 
   renderSimulator(allParties, totalSeats);
+    // Nascondi il pannello governo per le elezioni congressuali
+  const panel = document.getElementById('governmentPanel');
+  if (panel) panel.style.display = 'none';
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -1756,7 +1778,7 @@ function observeParliamentResize() {
   const container = document.getElementById('parliamentContainer');
   if (!container) return;
   if (window._parliamentResizeObserver) window._parliamentResizeObserver.disconnect();
-  
+
   const observer = new ResizeObserver(() => {
     if (window._lastParliamentData && container.clientWidth > 0) {
       Parliament.render(window._lastParliamentData);
@@ -1806,7 +1828,8 @@ async function loadElection(id) {
         return;
       }
 
-      if (election.type === 'president') await loadPresidentialElection(election);
+      const isLatestPresidential = (election.type === 'president' && election._id === _latestPresidentialElectionId);
+      if (election.type === 'president') await loadPresidentialElection(election, isLatestPresidential);
       else if (election.type === 'congress') await loadCongressElection(election);
       else throw new Error(`Unknown election type: ${election.type}`);
 
@@ -1852,46 +1875,40 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     loadElectionsHistory();
-    const govData = await getGovernmentWithDetails(_currentCountryId);
-renderGovernment(govData);
   });
 
   // 2. Listener cambio nazione
- document.getElementById('countrySelect').addEventListener('change', async function () {
-  const newCountryId = this.value;
-  if (newCountryId === _currentCountryId) return;
+  document.getElementById('countrySelect').addEventListener('change', async function () {
+    const newCountryId = this.value;
+    if (newCountryId === _currentCountryId) return;
 
-  _currentCountryId = newCountryId;
-  _electionHistory = [];
-  _currentCongressElectionId = null;
-  _partyColorMap.clear();
-  _partyNamesMap.clear();
+    _currentCountryId = newCountryId;
+    _electionHistory = [];
+    _currentCongressElectionId = null;
+    _partyColorMap.clear();
+    _partyNamesMap.clear();
 
-  try {
-    const data = await localFetch('/countries', {}, { useCache: false });
-    _currentCountryData = (data?.items || []).find(c => c._id === newCountryId) || null;
-  } catch (_) {
-    _currentCountryData = null;
-  }
-
-  setStatus('Loading…', 'loading');
-
-  try {
-    await loadPartiesForCountry(_currentCountryId);
-    await loadElectionsHistory();
-
-    // 🔁 Carica il governo per il NUOVO paese
-    const govData = await getGovernmentWithDetails(_currentCountryId);
-    renderGovernment(govData);
-
-    if (window.umami) {
-      window.umami.track('country-change', { country: _currentCountryId });
+    try {
+      const data = await localFetch('/countries', {}, { useCache: false });
+      _currentCountryData = (data?.items || []).find(c => c._id === newCountryId) || null;
+    } catch (_) {
+      _currentCountryData = null;
     }
-  } catch (err) {
-    console.error('Error switching country:', err);
-    setStatus('Error loading data', 'error');
-  }
-});
+
+    setStatus('Loading…', 'loading');
+
+    try {
+      await loadPartiesForCountry(_currentCountryId);
+      await loadElectionsHistory();
+
+      if (window.umami) {
+        window.umami.track('country-change', { country: _currentCountryId });
+      }
+    } catch (err) {
+      console.error('Error switching country:', err);
+      setStatus('Error loading data', 'error');
+    }
+  });
 
   // 3. Listener per il caricamento elezioni
   document.getElementById('loadBtn').addEventListener('click', () => loadElection());
