@@ -3,29 +3,70 @@
 
 <head>
   <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes">
   <title>WarEra · Political View</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link
     href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Sora:wght@300;400;500;600&display=swap"
     rel="stylesheet">
-  <!-- Tom Select CSS -->
   <link href="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/css/tom-select.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
   <link rel="stylesheet" href="style.css">
-
   <script defer src="https://cloud.umami.is/script.js" data-website-id="35489c6a-c6ac-453d-a0d6-cd17972dabd7"></script>
+  <style>
+    /* Aggiunte per il funzionamento dei dettagli (summary, freccia) */
+    details > summary {
+      list-style: none;
+      cursor: pointer;
+    }
+    details > summary::-webkit-details-marker {
+      display: none;
+    }
+    .details-marker {
+      transition: transform 0.2s ease;
+      display: inline-block;
+      font-size: 1.1rem;
+      color: var(--text2);
+      margin-left: auto;
+    }
+    details[open] .details-marker {
+      transform: rotate(180deg);
+    }
+    /* Per mantenere l’aspetto originale dei pannelli */
+    details.panel {
+      background: var(--s1);
+      border: 1px solid var(--bd);
+      border-radius: var(--r);
+      padding: 20px;
+      transition: border-color .2s;
+      animation: fadeIn .35s ease both;
+    }
+    details.panel > summary {
+      margin: -20px -20px 0 -20px;
+      padding: 20px;
+      border-bottom: 1px solid var(--bd);
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      flex-wrap: wrap;
+    }
+    details.panel[open] > summary {
+      margin-bottom: 16px;
+    }
+    details.panel:hover {
+      border-color: var(--bd2);
+    }
+  </style>
 </head>
 
 <body>
   <div class="app">
 
-    <!-- HEADER -->
+    <!-- HEADER (invariato) -->
     <header class="header">
       <div class="header-brand">
-        <button id="themeToggle" class="theme-toggle-btn" title="Switch to light mode"
-          aria-label="Toggle theme">☀️</button>
+        <button id="themeToggle" class="theme-toggle-btn" title="Switch to light mode" aria-label="Toggle theme">☀️</button>
         <div class="header-logo">🏛️</div>
         <div>
           <div class="header-title">Political View</div>
@@ -33,16 +74,11 @@
         </div>
       </div>
       <div class="header-controls">
-        <!-- COUNTRY SELECTION -->
         <div class="input-wrap select-wrap" style="margin-right:12px;">
-          <select id="countrySelect">
-            <option value="">— Choose a country —</option>
-          </select>
+          <select id="countrySelect"><option value="">— Choose a country —</option></select>
         </div>
         <div class="input-wrap select-wrap">
-          <select id="electionSelect">
-            <option value="">— Choose an election —</option>
-          </select>
+          <select id="electionSelect"><option value="">— Choose an election —</option></select>
         </div>
         <span class="or-divider">or</span>
         <div class="input-wrap">
@@ -50,13 +86,11 @@
         </div>
         <button class="btn-load" id="loadBtn">▶ Load</button>
         <span class="badge-status loading" id="statusBadge">Waiting…</span>
-        <a href="https://ko-fi.com/frappa10" target="_blank" class="kofi-btn-top" title="Supportami su Ko-fi">☕ Support
-          me</a>
+        <a href="https://ko-fi.com/frappa10" target="_blank" class="kofi-btn-top" title="Supportami su Ko-fi">☕ Support me</a>
       </div>
-
     </header>
 
-    <!-- STATS with skeleton -->
+    <!-- STATS (invariato) -->
     <div class="stats-row" id="statsRow">
       <div class="stat hl">
         <div class="stat-label">Total seats</div>
@@ -90,79 +124,108 @@
       </div>
     </div>
 
-    <!-- ══ TIMELINE ══ -->
-    <div class="panel timeline-panel" id="timelinePanel" style="display:none; margin-bottom:16px;">
-      <div class="panel-head">
+    <!-- ══ TIMELINE (Congress Election History) ── ora collassabile -->
+    <details class="panel timeline-panel" id="timelinePanel" style="display:none; margin-bottom:16px;" open>
+      <summary>
         <div class="panel-icon">📈</div>
         <h2>Congress Election History</h2>
         <span class="badge-count" id="timelineBadge"></span>
         <div class="timeline-legend" id="timelineLegend"></div>
-      </div>
+        <span class="details-marker">▼</span>
+      </summary>
       <div class="timeline-chart-wrap">
         <canvas id="timelineChart" role="img" aria-label="Seats trend over time"></canvas>
       </div>
       <div class="timeline-footer">
         <span class="timeline-tip">💡 Click an election to load it · Congress elections only</span>
       </div>
-    </div>
+    </details>
 
-    <!-- ══ PRESIDENTIAL VIEW ══ -->
+    <!-- ══ PRESIDENTIAL VIEW (non collassabile) ══ -->
+    <!-- ══ PRESIDENTIAL VIEW (con pannelli collassabili e riordinabili) ══ -->
     <div id="president-view" style="display:none;">
-      <div class="panel pres-panel">
-        <div class="panel-head">
-          <div class="panel-icon">🗳</div>
-          <h2>Presidential Election</h2>
-          <span class="badge-count" id="pres-status-badge" style="margin-left:auto;"></span>
-        </div>
-        <!-- Countdown live -->
-        <div id="presCountdown" class="pres-countdown"></div>
-        <!-- Margin of victory -->
-        <div id="presMargin" class="pres-margin" style="display:none;"></div>
-        <div id="pres-winner-banner" class="pres-winner" style="display:none;"></div>
+      <div class="presidential-grid sortable-grid">
+
         <!-- Government panel -->
-        <div class="panel government-panel" id="governmentPanel" style="display:none; margin-bottom:20px;">
-          <div class="panel-head">
+        <details class="panel" id="presGovernmentPanel" open>
+          <summary>
             <div class="panel-icon">🏛️</div>
-            <h2>Current Government</h2>
+            <h2>Current Government (as today)</h2>
             <span class="badge-count" id="govBadge"></span>
-          </div>
+            <span class="details-marker">▼</span>
+          </summary>
           <div class="government-grid" id="governmentGrid"></div>
-        </div>
-        <div id="pres-race" class="pres-race"></div>
-        <div class="pres-chart-wrap">
-          <canvas id="presidentChart" role="img" aria-label="Presidential election votes"></canvas>
-        </div>
-        <div id="pres-meta" class="pres-meta"></div>
-        <div class="pres-chart-wrap" style="margin-top:16px;">
-          <h3 style="font-family:'Playfair Display',serif;font-size:.9rem;color:var(--text2);margin-bottom:8px;">📈
-            Presidential turnout</h3>
-          <canvas id="presidentTurnoutChart" role="img" aria-label="Presidential votes trend"></canvas>
-          <!-- Historic winners -->
-          <div id="presHistoricPanel" style="display:none;margin-top:20px;">
-            <div class="pres-section-head">🏆 Past presidential winners</div>
+        </details>
+
+        <!-- Presidential Race -->
+        <details class="panel" id="presRacePanel" open>
+          <summary>
+            <div class="panel-icon">🗳</div>
+            <h2>Presidential Race</h2>
+            <span class="badge-count" id="pres-status-badge"></span>
+            <span class="details-marker">▼</span>
+          </summary>
+          <div id="presCountdown" class="pres-countdown"></div>
+          <div id="presMargin" class="pres-margin" style="display:none;"></div>
+          <div id="pres-winner-banner" class="pres-winner" style="display:none;"></div>
+          <div id="pres-race" class="pres-race"></div>
+        </details>
+
+        <!-- Vote Distribution chart -->
+        <details class="panel" id="presVotesChartPanel" open>
+          <summary>
+            <div class="panel-icon">📊</div>
+            <h2>Vote Distribution</h2>
+            <span class="details-marker">▼</span>
+          </summary>
+          <div class="pres-chart-wrap">
+            <canvas id="presidentChart" role="img" aria-label="Presidential election votes"></canvas>
+          </div>
+          <div id="pres-meta" class="pres-meta"></div>
+        </details>
+
+        <!-- Turnout chart -->
+        <details class="panel" id="presTurnoutChartPanel" open>
+          <summary>
+            <div class="panel-icon">📈</div>
+            <h2>Presidential Turnout</h2>
+            <span class="details-marker">▼</span>
+          </summary>
+          <div class="pres-chart-wrap">
+            <canvas id="presidentTurnoutChart" role="img" aria-label="Presidential votes trend"></canvas>
+          </div>
+        </details>
+
+        <!-- Historic winners (inizialmente nascosto se pochi dati) -->
+        <details class="panel" id="presHistoricPanelWrap" style="display:none;" open>
+          <summary>
+            <div class="panel-icon">🏆</div>
+            <h2>Past Presidential Winners</h2>
+            <span class="details-marker">▼</span>
+          </summary>
+          <div id="presHistoricPanel">
             <table class="sim-table" style="margin-top:8px;">
               <thead>
-                <tr>
-                  <th>Election</th>
-                  <th>Winner</th>
-                  <th>Party</th>
-                  <th>Votes</th>
-                  <th>Runner-up</th>
-                </tr>
+                <tr><th>Election</th><th>Winner</th><th>Party</th><th>Votes</th><th>Runner-up</th></tr>
               </thead>
               <tbody id="presHistoricBody"></tbody>
             </table>
           </div>
+        </details>
 
-          <!-- Presidential simulator -->
-          <div id="presSimPanel" style="display:none;margin-top:20px;">
-            <div class="pres-section-head"
-              style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <!-- Simulator -->
+        <details class="panel" id="presSimPanelWrap" style="display:none;" open>
+          <summary>
+            <div class="panel-icon">🧮</div>
+            <h2>Presidential Simulator</h2>
+            <span class="details-marker">▼</span>
+          </summary>
+          <div id="presSimPanel">
+            <div class="pres-section-head" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
               <span>🧮 Presidential simulator</span>
               <div style="display:flex;align-items:center;gap:10px;">
                 <label class="sim-slider-label">Expected voters</label>
-                <input type="number" id="presSimVoters" class="sim-input-voters" placeholder="e.g. 1000" min="1"
-                  step="1">
+                <input type="number" id="presSimVoters" class="sim-input-voters" placeholder="e.g. 1000" min="1" step="1">
               </div>
             </div>
             <div class="sim-historic-row" style="margin-top:10px;">
@@ -170,72 +233,56 @@
               <div id="presSimHistRef" class="sim-chips"></div>
             </div>
             <div class="sim-metrics" style="margin-top:10px;">
-              <div class="sim-metric">
-                <div class="sim-metric-label">Avg hist. votes</div>
-                <div class="sim-metric-val" id="presSimAvgHist">—</div>
-              </div>
-              <div class="sim-metric hl">
-                <div class="sim-metric-label">Expected voters</div>
-                <div class="sim-metric-val" id="presSimExpected">—</div>
-              </div>
-              <div class="sim-metric pres">
-                <div class="sim-metric-label">Votes to win (50%+1)</div>
-                <div class="sim-metric-val" id="presSimToWin">—</div>
-              </div>
+              <div class="sim-metric"><div class="sim-metric-label">Avg hist. votes</div><div class="sim-metric-val" id="presSimAvgHist">—</div></div>
+              <div class="sim-metric hl"><div class="sim-metric-label">Expected voters</div><div class="sim-metric-val" id="presSimExpected">—</div></div>
+              <div class="sim-metric pres"><div class="sim-metric-label">Votes to win (50%+1)</div><div class="sim-metric-val" id="presSimToWin">—</div></div>
             </div>
             <table class="sim-table" style="margin-top:12px;">
               <thead>
-                <tr>
-                  <th>Candidate</th>
-                  <th>Current votes</th>
-                  <th>Vote share</th>
-                  <th>Proj. share</th>
-                  <th>Still needed</th>
-                </tr>
+                <tr><th>Candidate</th><th>Current votes</th><th>Vote share</th><th>Proj. share</th><th>Still needed</th></tr>
               </thead>
               <tbody id="presSimBody"></tbody>
             </table>
-            <div class="sim-footer" style="margin-top:8px;">
-              ⚠️ Projection based on current votes scaled to expected turnout.
-            </div>
+            <div class="sim-footer" style="margin-top:8px;">⚠️ Projection based on current votes scaled to expected turnout.</div>
           </div>
-        </div>
+        </details>
+
       </div>
     </div>
 
-    <!-- ══ PARLIAMENT VIEW ══ -->
+    <!-- ══ CONGRESS VIEW (con pannelli collassabili) ══ -->
     <div id="congress-view" style="display:none;">
 
       <div class="main-grid">
-        <!-- Parliament -->
-        <div class="panel">
-          <div class="panel-head" style="flex-wrap: nowrap; gap: 8px;">
+        <!-- Parliament Composition (collassabile) -->
+        <details class="panel" open>
+          <summary>
             <div class="panel-icon">🏛</div>
             <h2 style="white-space: nowrap;">Parliament Composition</h2>
-            <span class="badge-count" id="badgeCount" style="margin-left: 0;">—</span>
-            <span class="badge-status" id="congressStatusBadge" style="margin-left: 8px;"></span>
-            <div class="panel-actions" style="margin-left: auto; display: flex; gap: 6px; flex-shrink: 0;">
+            <span class="badge-count" id="badgeCount" style="margin-left:0;">—</span>
+            <span class="badge-status" id="congressStatusBadge" style="margin-left:8px;"></span>
+            <div class="panel-actions" style="margin-left:auto; display:flex; gap:6px; flex-shrink:0;">
               <button class="action-btn" id="fullscreenBtn" title="Fullscreen">⛶</button>
               <button class="action-btn" id="exportCsvBtn" title="Export CSV">📥 Export CSV</button>
             </div>
-          </div>
+            <span class="details-marker">▼</span>
+          </summary>
           <div id="congressCountdown" class="pres-countdown" style="margin-bottom:12px;"></div>
-          <!-- Skeleton parliament -->
           <div id="parliamentSkeleton" class="parliament-skeleton">
             <div class="parl-sk-arc"></div>
             <div class="parl-sk-dots"></div>
           </div>
           <div id="parliamentContainer" class="parliament-wrap" style="display:none;"></div>
           <div id="legendContainer" class="parl-legend"></div>
-        </div>
+        </details>
 
-        <!-- Table -->
-        <div class="panel">
-          <div class="panel-head">
+        <!-- Parliament Detail (collassabile) -->
+        <details class="panel" open>
+          <summary>
             <div class="panel-icon">📋</div>
             <h2>Parliament Detail</h2>
-          </div>
-          <!-- Skeleton table -->
+            <span class="details-marker">▼</span>
+          </summary>
           <div id="tableSkeleton" class="table-skeleton">
             <div class="sk-row sk-header"></div>
             <div class="sk-row"></div>
@@ -245,130 +292,92 @@
             <div class="sk-row"></div>
           </div>
           <table class="party-table" id="partyTable" style="display:none;">
-            <thead>
-              <tr>
-                <th>Party</th>
-                <th style="width:130px">Seats</th>
-                <th>Members</th>
-                <th>Votes</th>
-                <th>% seats</th>
-                <th>Leader</th>
-              </tr>
-            </thead>
+            <thead><tr><th>Party</th><th style="width:130px">Seats</th><th>Members</th><th>Votes</th><th>% seats</th><th>Leader</th></tr></thead>
             <tbody id="partyTableBody"></tbody>
           </table>
-        </div>
+        </details>
       </div>
 
-      <!-- Charts -->
+      <!-- Charts row: due pannelli collassabili -->
       <div class="charts-row" style="margin-top:16px;">
-        <div class="panel">
-          <div class="panel-head">
+        <!-- Seats Distribution -->
+        <details class="panel" open>
+          <summary>
             <div class="panel-icon">🥧</div>
             <h2>Seats Distribution</h2>
-          </div>
+            <span class="details-marker">▼</span>
+          </summary>
           <div class="chart-inner" id="seatsChartWrap">
             <div class="sk-chart-block"></div>
             <canvas id="seatsChart" role="img" style="display:none;"></canvas>
           </div>
-        </div>
-        <div class="panel">
-          <div class="panel-head">
+        </details>
+
+        <!-- Members per Party — Parliament -->
+        <details class="panel" open>
+          <summary>
             <div class="panel-icon">📊</div>
             <h2>Members per Party — Parliament</h2>
-          </div>
+            <span class="details-marker">▼</span>
+          </summary>
           <div class="chart-inner" id="membersChartWrap">
             <div class="sk-chart-block"></div>
             <canvas id="membersChart" role="img" style="display:none;"></canvas>
           </div>
-        </div>
+        </details>
       </div>
 
-      <!-- All parties -->
+      <!-- All parties by members (collassabile) -->
       <div class="single-chart-row" id="allPartiesRow" style="margin-top:16px;">
-        <div class="panel all-parties-panel">
-          <div class="panel-head">
+        <details class="panel all-parties-panel" open>
+          <summary>
             <div class="panel-icon">🗂</div>
             <h2>All parties by members</h2>
             <span class="badge-count" id="badgeAllParties">—</span>
-          </div>
+            <span class="details-marker">▼</span>
+          </summary>
           <div class="ap-chart-outer" id="allPartiesChartWrap">
             <div class="sk-chart-block" style="height:200px;"></div>
             <canvas id="allPartiesChart" role="img" style="display:none;"></canvas>
           </div>
-        </div>
+        </details>
       </div>
-      <!-- ══ ELECTORAL SIMULATOR ══ -->
-      <div class="panel sim-panel" id="simulatorPanel" style="display:none; margin-top:16px;">
-        <div class="panel-head">
+
+      <!-- Electoral Simulator (collassabile, con id per JavaScript) -->
+      <details class="panel sim-panel" id="simulatorPanel" style="display:none; margin-top:16px;" open>
+        <summary>
           <div class="panel-icon">🧮</div>
           <h2>Electoral Simulator</h2>
           <span class="badge-count" style="margin-left:8px;">Projection</span>
           <div style="margin-left:auto; display:flex; align-items:center; gap:10px;">
             <label class="sim-slider-label">Expected voters</label>
-            <input type="number" id="simExpectedVotersInput" class="sim-input-voters" value="" placeholder="e.g. 1000"
-              min="1" step="1">
+            <input type="number" id="simExpectedVotersInput" class="sim-input-voters" value="" placeholder="e.g. 1000" min="1" step="1">
           </div>
-        </div>
-
-        <!-- Historic ref chips -->
+          <span class="details-marker">▼</span>
+        </summary>
         <div class="sim-historic-row">
           <span class="sim-section-label">📊 Historic turnout</span>
           <div id="simHistoricRef" class="sim-chips"></div>
         </div>
-
-        <!-- Key metrics -->
         <div class="sim-metrics">
-          <div class="sim-metric">
-            <div class="sim-metric-label">Population</div>
-            <div class="sim-metric-val" id="simPopulation">—</div>
-          </div>
-          <div class="sim-metric">
-            <div class="sim-metric-label">Avg seats</div>
-            <div class="sim-metric-val" id="simAvgVotes">—</div>
-            <div class="sim-metric-sub" id="simAvgTurnout">—</div>
-          </div>
-          <div class="sim-metric hl">
-            <div class="sim-metric-label">Expected voters</div>
-            <div class="sim-metric-val" id="simExpVoters">—</div>
-            <div class="sim-metric-sub">at current %</div>
-          </div>
-          <div class="sim-metric hl">
-            <div class="sim-metric-label">Votes / seat</div>
-            <div class="sim-metric-val" id="simVotesPerSeat">—</div>
-            <div class="sim-metric-sub">projected threshold</div>
-          </div>
-          <div class="sim-metric pres">
-            <div class="sim-metric-label">To win presidency</div>
-            <div class="sim-metric-val" id="simVotesToWin">—</div>
-            <div class="sim-metric-sub">50% + 1 of expected</div>
-          </div>
+          <div class="sim-metric"><div class="sim-metric-label">Population</div><div class="sim-metric-val" id="simPopulation">—</div></div>
+          <div class="sim-metric"><div class="sim-metric-label">Avg seats</div><div class="sim-metric-val" id="simAvgVotes">—</div><div class="sim-metric-sub" id="simAvgTurnout">—</div></div>
+          <div class="sim-metric hl"><div class="sim-metric-label">Expected voters</div><div class="sim-metric-val" id="simExpVoters">—</div><div class="sim-metric-sub">at current %</div></div>
+          <div class="sim-metric hl"><div class="sim-metric-label">Votes / seat</div><div class="sim-metric-val" id="simVotesPerSeat">—</div><div class="sim-metric-sub">projected threshold</div></div>
+          <div class="sim-metric pres"><div class="sim-metric-label">To win presidency</div><div class="sim-metric-val" id="simVotesToWin">—</div><div class="sim-metric-sub">50% + 1 of expected</div></div>
         </div>
-
-        <!-- Party projection table -->
         <div class="sim-table-wrap">
           <table class="sim-table">
-            <thead>
-              <tr>
-                <th>Party</th>
-                <th>Vote share</th>
-                <th>Projected votes</th>
-                <th>Current seats</th>
-                <th>Delta</th>
-                <th>Projected seats</th>
-              </tr>
-            </thead>
+            <thead><tr><th>Party</th><th>Vote share</th><th>Projected votes</th><th>Current seats</th><th>Delta</th><th>Projected seats</th></tr></thead>
             <tbody id="simPartyBody"></tbody>
           </table>
         </div>
+        <div class="sim-footer">⚠️ Projection based on current party membership × expected turnout. Assumes proportional allocation.</div>
+      </details>
 
-        <div class="sim-footer">
-          ⚠️ Projection based on current party membership × expected turnout. Assumes proportional allocation.
-        </div>
-      </div>
     </div><!-- /congress-view -->
 
-    <!-- FULLSCREEN OVERLAY -->
+    <!-- FULLSCREEN OVERLAY (invariato) -->
     <div id="parliamentOverlay" class="parl-overlay">
       <div class="parl-overlay-box">
         <div class="parl-overlay-head">
@@ -379,17 +388,15 @@
       </div>
     </div>
   </div>
-  <!-- CLEAR CACHE (nascosto in footer) -->
+
   <div style="text-align:center;padding:12px 0 4px;opacity:.35;font-size:.7rem;">
-    <button id="clearCacheBtn" style="background:none;border:none;color:#535e72;cursor:pointer;font-size:.7rem;">⌫ Clear
-      cache</button>
-  </div><!-- /app -->
+    <button id="clearCacheBtn" style="background:none;border:none;color:#535e72;cursor:pointer;font-size:.7rem;">⌫ Clear cache</button>
+  </div>
 
   <div class="tooltip" id="tooltip"></div>
   <script src="parliament.js"></script>
   <script src="app.js"></script>
-  <!-- Tom Select JS -->
   <script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 </body>
-
 </html>

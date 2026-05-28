@@ -1090,3 +1090,209 @@ input, select, .comp-select, .stat-value {
 .gov-name a:hover {
   color: var(--gold);
 }
+
+.toggle-chart-btn {
+  background: var(--s2);
+  border: 1px solid var(--bd2);
+  border-radius: 4px;
+  color: var(--text2);
+  font-size: 1.1rem;
+  font-weight: bold;
+  width: 26px;
+  height: 26px;
+  margin-left: auto;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+.toggle-chart-btn:hover {
+  background: var(--s3);
+  border-color: var(--bd3);
+  color: var(--text);
+}
+/* ═══ GRID TRANSITIONS & SINGLE-COL STATE ═══ */
+/* ═══ GRID TRANSITIONS & SINGLE-COL STATE ═══ */
+.main-grid, .charts-row {
+  display: grid;
+  gap: 16px;
+  /* Stato default: 2 colonne */
+  grid-template-columns: 1fr 1fr; 
+  transition: grid-template-columns 0.45s cubic-bezier(0.4, 0, 0.2, 1), gap 0.3s ease;
+  will-change: grid-template-columns;
+}
+
+.main-grid { grid-template-columns: 1.05fr 0.95fr; }
+
+/* Quando uno è chiuso → 1 colonna a tutto schermo */
+.main-grid.single-col, .charts-row.single-col {
+  grid-template-columns: 1fr;
+  gap: 20px;
+}
+
+/* Fade-in armonioso del contenuto quando il pannello si espande */
+details.panel[open] > :not(summary) {
+  animation: panelContentIn 0.35s ease both;
+}
+
+@keyframes panelContentIn {
+  from { opacity: 0; transform: translateY(6px) scale(0.99); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Quando un pannello è chiuso → 1 colonna a tutto schermo */
+.charts-row.single-col { grid-template-columns: 1fr; gap: 20px; }
+.main-grid.single-col  { grid-template-columns: 1fr; gap: 24px; }
+
+/* ═══ DETAILS PANEL UX ═══ */
+details.panel {
+  overflow: hidden; /* Evita sbordamenti durante la transizione */
+}
+
+details.panel summary {
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+}
+
+/* Fade-in + leggero scale quando il pannello si apre */
+details.panel[open] summary ~ * {
+  animation: panelContentIn 0.35s ease both;
+}
+
+@keyframes panelContentIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Opzionale: rotazione freccia se usi <summary> con icona */
+details.panel summary::-webkit-details-marker { display: none; }
+details.panel summary::after {
+  content: '▾';
+  float: right;
+  transition: transform 0.3s ease;
+  font-size: 0.8rem;
+  color: var(--text3);
+}
+details.panel[open] summary::after { transform: rotate(180deg); }
+/* ═══ DRAG & DROP UX ═══ */
+.panel summary {
+  cursor: grab;
+  position: relative;
+  padding-left: 24px; /* spazio per l'icona drag */
+}
+
+/* Icona drag a sinistra del titolo */
+.panel summary::before {
+  content: '⠿';
+  position: absolute; left: 6px; top: 50%; transform: translateY(-50%);
+  font-size: 13px; color: var(--text3); opacity: 0.4; transition: opacity .2s;
+  pointer-events: none;
+}
+.panel summary:hover::before { opacity: 0.8; }
+.panel summary:active { cursor: grabbing; }
+
+/* Feedback visivo Sortable */
+.sortable-ghost {
+  opacity: 0.35 !important;
+  background: var(--s2) !important;
+  border: 1px dashed var(--gold) !important;
+  transform: scale(0.98);
+}
+.sortable-chosen {
+  box-shadow: 0 12px 32px rgba(0,0,0,0.5) !important;
+  transform: scale(1.03);
+  z-index: 100;
+}
+.sortable-drag { opacity: 0.9; }
+
+/* Disabilita transizioni grid durante il drag per evitare "salti" */
+.main-grid.dragging, .charts-row.dragging {
+  transition: none !important;
+}
+/* Disabilita transizioni durante il drag per evitare "rimbalzi" innaturali */
+.main-grid.dragging, .charts-row.dragging {
+  transition: none !important;
+  min-height: 220px; /* Evita collasso verticale mentre trascini via tutto */
+}
+
+/* Mantieni la transizione normale solo quando non si sta trascinando */
+.main-grid, .charts-row {
+  transition: grid-template-columns 0.45s cubic-bezier(0.4, 0, 0.2, 1), 
+              gap 0.3s ease, 
+              min-height 0.2s ease;
+}
+
+/* Placeholder visivo per Sortable (opzionale ma consigliato) */
+.sortable-ghost {
+  opacity: 0.3;
+  border: 2px dashed var(--gold) !important;
+  background: transparent !important;
+  transform: scale(0.96);
+}
+/* ═══ SMOOTH PANEL TOGGLE (no scatti) ═══ */
+details.panel {
+  overflow: hidden;
+  contain: layout style; /* ottimizza reflow */
+}
+details.panel > :not(summary) {
+  display: block;
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.3s ease,
+              transform 0.3s ease;
+  pointer-events: none;
+}
+details.panel[open] > :not(summary) {
+  max-height: 4000px;
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+/* ═══ DRAG & DROP GRID SYSTEM ═══ */
+.sortable-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  transition: grid-template-columns 0.45s cubic-bezier(0.4, 0, 0.2, 1), gap 0.3s ease;
+}
+/* Quando c'è 1 pannello o uno è chiuso → tutto lo spazio */
+.sortable-grid.single-col {
+  grid-template-columns: 1fr;
+  gap: 20px;
+}
+/* Disabilita transizioni durante il drag per evitare rimbalzi */
+.sortable-grid.dragging {
+  transition: none !important;
+}
+.sortable-grid.dragging details.panel > :not(summary) {
+  transition: none !important;
+  max-height: 2000px;
+  opacity: 1;
+}
+
+/* ═══ SORTABLE UX ═══ */
+.panel summary { cursor: grab; user-select: none; }
+.panel summary:active { cursor: grabbing; }
+.sortable-ghost {
+  opacity: 0.25; border: 2px dashed var(--gold);
+  background: transparent !important; transform: scale(0.96);
+}
+.sortable-chosen {
+  box-shadow: 0 12px 32px rgba(0,0,0,0.45);
+  transform: scale(1.02); z-index: 100;
+}
+/* Presidenziale: sempre a colonna singola (full width) */
+.presidential-grid {
+  display: grid;
+  grid-template-columns: 1fr !important;   /* forza una colonna */
+  gap: 16px;
+}
+/* Disabilita il cambiamento dinamico della griglia (non serve single-col) */
+.presidential-grid.single-col {
+  grid-template-columns: 1fr !important;   /* mantiene una colonna */
+}

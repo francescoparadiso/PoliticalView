@@ -25,6 +25,8 @@ function toggleTheme() {
   setTimeout(() => {
     if (document.getElementById('congress-view').style.display !== 'none' && window._currentCongressElectionId) {
       loadElection(window._currentCongressElectionId);
+    } else if (window._lastAllParties) {
+      renderAllPartiesChart(window._lastAllParties);
     } else if (document.getElementById('president-view').style.display !== 'none' && window._lastPresData?.election) {
       loadPresidentialElection(window._lastPresData.election, _currentIsLatestPresidential);
     }
@@ -532,13 +534,13 @@ async function getGovernmentWithDetails(countryId) {
   return gov;
 }
 function renderGovernment(gov) {
-  const panel = document.getElementById('governmentPanel');
+  const panel = document.getElementById('presGovernmentPanel');  // nuovo id
   const grid = document.getElementById('governmentGrid');
   if (!gov || !gov.presidentData) {
-    if (panel) panel.style.display = 'none';
+    if (panel) panel.open = false;  // nasconde il pannello
     return;
   }
-  panel.style.display = '';
+  panel.open = true;  // mostra il pannello
 
   const roles = [
     { key: 'president', label: 'President', dataKey: 'presidentData' },
@@ -808,12 +810,6 @@ function renderAllPartiesChart(allParties) {
   const L = getTheme() === 'light';
   const { tt, tick, grid, border: gb } = chartTheme();
 
-  // Legge i colori dinamici dal CSS (variabili del tema)
-  const rootStyles = getComputedStyle(document.documentElement);
-  const goldColor = rootStyles.getPropertyValue('--gold2').trim() || '#e8c97a';
-  const textDark = rootStyles.getPropertyValue('--text').trim() || (L ? '#1a1e2e' : '#dde2ec');
-  const textLight = rootStyles.getPropertyValue('--text2').trim() || '#8892a4';
-
   // Colori barre: più intensi per partiti con seggi
   const bg = sorted.map(p => {
     if (p.seats > 0) {
@@ -823,11 +819,12 @@ function renderAllPartiesChart(allParties) {
     }
   });
 
+  // Bordo barre: per partiti con seggi, bordo scuro in light, bianco in dark
   const brd = sorted.map(p => {
     if (p.seats > 0) {
-      return L ? 'rgba(0,0,0,0.7)' : goldColor + 'cc';
+      return L ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)';
     } else {
-      return L ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.1)';
+      return L ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)';
     }
   });
 
@@ -874,10 +871,10 @@ function renderAllPartiesChart(allParties) {
               const party = sorted[ctx.index];
               if (!party) return tick;
               if (party.seats > 0) {
-                // Usa colore dinamico: in light nero, in dark oro (dalla variabile CSS)
-                return L ? textDark : goldColor;
+                // Light → nero, Dark → bianco
+                return L ? '#000000' : '#ffffff';
               }
-              return textLight;
+              return tick;  // partiti senza seggi: colore neutro del tema
             },
             font: ctx => {
               const party = sorted[ctx.index];
@@ -1225,15 +1222,14 @@ async function loadPresidentialElection(election, isLatestPresidential) {
   window._lastPresData = { candidates, totalVotes, election };
   renderPresSimulator(candidates, totalVotes, election);
   document.getElementById('badgeCount').textContent = `Presidenziale · ${totalVotes} voti`;
-
   // Mostra il governo solo se questa è l'ultima elezione presidenziale
-  if (isLatestPresidential) {
-    const govData = await getGovernmentWithDetails(election.country || _currentCountryId);
-    renderGovernment(govData);
-  } else {
-    const panel = document.getElementById('governmentPanel');
-    if (panel) panel.style.display = 'none';
-  }
+if (isLatestPresidential) {
+  const govData = await getGovernmentWithDetails(election.country || _currentCountryId);
+  renderGovernment(govData);
+} else {
+  const panel = document.getElementById('presGovernmentPanel');
+  if (panel) panel.open = false;
+}
 }
 /* ── PRESIDENTIAL SIMULATOR ── */
 function renderPresSimulator(candidates, totalVotes, election) {
@@ -1387,7 +1383,7 @@ async function loadCongressElection(election) {
       statusClass = 'pres-badge-live';
       isOngoing = true;
     } else {
-      statusText = '✅ Conclusa';
+      statusText = '✅ Closed';
       statusClass = 'pres-badge-done';
     }
     if (statusBadge) {
@@ -1637,8 +1633,8 @@ async function loadCongressElection(election) {
 
   renderSimulator(allParties, totalSeats);
   // Nascondi il pannello governo per le elezioni congressuali
-  const panel = document.getElementById('governmentPanel');
-  if (panel) panel.style.display = 'none';
+const panel = document.getElementById('presGovernmentPanel');
+if (panel) panel.open = false;
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -1775,6 +1771,130 @@ function onExpectedVotersChange() {
     renderSimulator(window._lastAllParties, totalSeats);
   }
 }
+
+
+// Helper per ridimensionare i grafici senza distorsioni
+function requestChartResize() {
+  const delay = 460; // leggermente superiore alla durata della transizione CSS
+  setTimeout(() => {
+    if (window._seatsChart) window._seatsChart.resize();
+    if (window._membersChart) window._membersChart.resize();
+    if (window._allPartiesChart) window._allPartiesChart.resize();
+    if (window._timelineChart) window._timelineChart.resize();
+    // Il parlamento SVG si adatta già tramite ResizeObserver
+  }, delay);
+}
+// ---------- PANEL MANAGEMENT (unified) ----------
+function initPanelSystem() {
+const grids = ['.main-grid', '.charts-row', '.single-chart-row', '.presidential-grid'];
+  const panelContainers = [];
+
+  grids.forEach(selector => {
+    const grid = document.querySelector(selector);
+    if (!grid) return;
+    panelContainers.push(grid);
+
+    // Assicura ID univoci per i pannelli
+    grid.querySelectorAll('details.panel').forEach((el, idx) => {
+      if (!el.id) el.id = `panel-${selector.replace(/[^a-z]/g, '')}-${Date.now()}-${idx}`;
+    });
+
+    // Inizializza Sortable
+    new Sortable(grid, {
+      group: { name: 'warera-panels', pull: true, put: true },
+      animation: 250,
+      handle: 'summary',
+      ghostClass: 'sortable-ghost',
+      chosenClass: 'sortable-chosen',
+      dragClass: 'sortable-drag',
+      onStart: () => panelContainers.forEach(g => g.classList.add('dragging')),
+      onEnd: () => {
+        panelContainers.forEach(g => g.classList.remove('dragging'));
+        updateAllGridLayouts(panelContainers);
+        saveAllGridOrders(panelContainers);
+        requestChartResize();
+      }
+    });
+  });
+
+  // Ripristina ordine salvato
+  loadAllGridOrders(panelContainers);
+  // Aggiorna layout iniziale
+  updateAllGridLayouts(panelContainers);
+
+  // Listener toggle per ogni pannello
+  document.querySelectorAll('details.panel').forEach(panel => {
+    panel.addEventListener('toggle', () => {
+      updateAllGridLayouts(panelContainers);
+      // Forza ridisegno grafici dopo l'animazione
+      setTimeout(() => {
+        const canvas = panel.querySelector('canvas');
+        if (canvas && canvas.chart) canvas.chart.resize();
+      }, 300);
+    });
+  });
+}
+
+function updateAllGridLayouts(grids) {
+  grids.forEach(grid => {
+    const panels = grid.querySelectorAll('details.panel');
+    const anyClosed = Array.from(panels).some(p => !p.open);
+    // Aggiunge/rimuove classe .single-col su ogni griglia
+    grid.classList.toggle('single-col', panels.length <= 1 || anyClosed);
+  });
+}
+
+function saveAllGridOrders(grids) {
+  grids.forEach(grid => {
+    const key = `panel_order_${grid.className.split(' ')[0]}`; // usa prima classe come ID
+    const order = Array.from(grid.children).map(el => el.id);
+    localStorage.setItem(key, JSON.stringify(order));
+  });
+}
+
+function loadAllGridOrders(grids) {
+  grids.forEach(grid => {
+    const key = `panel_order_${grid.className.split(' ')[0]}`;
+    const saved = localStorage.getItem(key);
+    if (!saved) return;
+    try {
+      const order = JSON.parse(saved);
+      order.forEach(id => {
+        const el = document.getElementById(id);
+        if (el && el.parentNode === grid) grid.appendChild(el);
+      });
+    } catch(e) {}
+  });
+}
+
+function requestChartResize() {
+  setTimeout(() => {
+    if (window._seatsChart) window._seatsChart.resize();
+    if (window._membersChart) window._membersChart.resize();
+    if (window._allPartiesChart) window._allPartiesChart.resize();
+    if (window._timelineChart) window._timelineChart.resize();
+  }, 350);
+}
+
+
+function savePanelOrder(grid) {
+  const key = `panel_order_${grid.className.trim().replace(/\s+/g, '_')}`;
+  const order = Array.from(grid.children).map(el => el.id);
+  localStorage.setItem(key, JSON.stringify(order));
+}
+
+function loadPanelOrder(grid) {
+  const key = `panel_order_${grid.className.trim().replace(/\s+/g, '_')}`;
+  const saved = localStorage.getItem(key);
+  if (!saved) return;
+  try {
+    const order = JSON.parse(saved);
+    order.forEach(id => {
+      const el = document.getElementById(id);
+      if (el && el.parentNode === grid) grid.appendChild(el); // sposta in coda seguendo l'ordine
+    });
+  } catch(e) {}
+}
 function observeParliamentResize() {
   const container = document.getElementById('parliamentContainer');
   if (!container) return;
@@ -1830,7 +1950,7 @@ async function loadElection(id) {
       }
 
       const isLatestPresidential = (election.type === 'president' && election._id === _latestPresidentialElectionId);
-      _currentIsLatestPresidential = isLatestPresidential;   
+      _currentIsLatestPresidential = isLatestPresidential;
       if (election.type === 'president') await loadPresidentialElection(election, isLatestPresidential);
       else if (election.type === 'congress') await loadCongressElection(election);
       else throw new Error(`Unknown election type: ${election.type}`);
@@ -1877,6 +1997,23 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     loadElectionsHistory();
+    initPanelSystem();
+  });
+
+  document.querySelectorAll('details.panel').forEach(details => {
+    details.addEventListener('toggle', function (e) {
+      if (this.open) {
+        // Forza aggiornamento di eventuali canvas al suo interno
+        const seatsCanvas = this.querySelector('#seatsChart');
+        if (seatsCanvas && _seatsChart) _seatsChart.update();
+        const membersCanvas = this.querySelector('#membersChart');
+        if (membersCanvas && _membersChart) _membersChart.update();
+        const allPartiesCanvas = this.querySelector('#allPartiesChart');
+        if (allPartiesCanvas && _allPartiesChart) _allPartiesChart.update();
+        const timelineCanvas = this.querySelector('#timelineChart');
+        if (timelineCanvas && _timelineChart) _timelineChart.update();
+      }
+    });
   });
 
   // 2. Listener cambio nazione
@@ -1945,3 +2082,4 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => setStatus('', ''), 2000);
   });
 });
+
