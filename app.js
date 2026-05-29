@@ -107,7 +107,7 @@ let _pendingRequest = null;
 let _electionHistory = [];
 let _currentCongressElectionId = null;
 let _timelineElectionIds = [];
-let _currentCountryId = '6813b6d446e731854c7ac7a2';
+let _currentCountryId = localStorage.getItem('preferredCountryId') || '6813b6d446e731854c7ac7a2';
 let _currentCountryData = null;   // { population, name, ... }
 let _historicTurnouts = [];       // [{ electionId, totalVotes, date }]
 let _lastAllParties = null;   // per il simulatore, tutti i partiti
@@ -295,10 +295,9 @@ async function loadCountries() {
       });
     });
 
-    // Seleziona l'Italia se presente, altrimenti la prima opzione
-    const italyOption = tomSelect.options['6813b6d446e731854c7ac7a2'];
-    if (italyOption) {
-      tomSelect.setValue('6813b6d446e731854c7ac7a2');
+    const savedOption = tomSelect.options[_currentCountryId];
+    if (savedOption) {
+      tomSelect.setValue(_currentCountryId);
     } else {
       tomSelect.setValue(Object.keys(tomSelect.options)[0] || '');
     }
@@ -2022,6 +2021,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 2. Listener cambio nazione
   document.getElementById('countrySelect').addEventListener('change', async function () {
     const newCountryId = this.value;
+    localStorage.setItem('preferredCountryId', newCountryId);
     if (newCountryId === _currentCountryId) return;
 
     _currentCountryId = newCountryId;
