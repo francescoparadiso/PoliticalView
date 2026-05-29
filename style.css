@@ -1296,3 +1296,18 @@ details.panel[open] > :not(summary) {
 .presidential-grid.single-col {
   grid-template-columns: 1fr !important;   /* mantiene una colonna */
 }
+/* Mobile: sempre una colonna nelle griglie congressuali e presidenziali */
+@media (max-width: 768px) {
+  .main-grid,
+  .charts-row,
+  .presidential-grid {
+    grid-template-columns: 1fr !important;
+    gap: 16px;
+  }
+  /* Disabilita la classe single-col (non serve più) */
+  .main-grid.single-col,
+  .charts-row.single-col,
+  .presidential-grid.single-col {
+    grid-template-columns: 1fr !important;
+  }
+}

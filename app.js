@@ -1223,13 +1223,13 @@ async function loadPresidentialElection(election, isLatestPresidential) {
   renderPresSimulator(candidates, totalVotes, election);
   document.getElementById('badgeCount').textContent = `Presidenziale · ${totalVotes} voti`;
   // Mostra il governo solo se questa è l'ultima elezione presidenziale
-if (isLatestPresidential) {
-  const govData = await getGovernmentWithDetails(election.country || _currentCountryId);
-  renderGovernment(govData);
-} else {
-  const panel = document.getElementById('presGovernmentPanel');
-  if (panel) panel.open = false;
-}
+  if (isLatestPresidential) {
+    const govData = await getGovernmentWithDetails(election.country || _currentCountryId);
+    renderGovernment(govData);
+  } else {
+    const panel = document.getElementById('presGovernmentPanel');
+    if (panel) panel.open = false;
+  }
 }
 /* ── PRESIDENTIAL SIMULATOR ── */
 function renderPresSimulator(candidates, totalVotes, election) {
@@ -1633,8 +1633,8 @@ async function loadCongressElection(election) {
 
   renderSimulator(allParties, totalSeats);
   // Nascondi il pannello governo per le elezioni congressuali
-const panel = document.getElementById('presGovernmentPanel');
-if (panel) panel.open = false;
+  const panel = document.getElementById('presGovernmentPanel');
+  if (panel) panel.open = false;
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -1786,7 +1786,7 @@ function requestChartResize() {
 }
 // ---------- PANEL MANAGEMENT (unified) ----------
 function initPanelSystem() {
-const grids = ['.main-grid', '.charts-row', '.single-chart-row', '.presidential-grid'];
+  const grids = ['.main-grid', '.charts-row', '.single-chart-row', '.presidential-grid'];
   const panelContainers = [];
 
   grids.forEach(selector => {
@@ -1804,6 +1804,9 @@ const grids = ['.main-grid', '.charts-row', '.single-chart-row', '.presidential-
       group: { name: 'warera-panels', pull: true, put: true },
       animation: 250,
       handle: 'summary',
+      delay: 200,                     // millisecondi di attesa prima di attivare il drag
+      delayOnTouchOnly: true,        // il delay vale solo per i dispositivi touch
+      touchStartThreshold: 3,
       ghostClass: 'sortable-ghost',
       chosenClass: 'sortable-chosen',
       dragClass: 'sortable-drag',
@@ -1863,7 +1866,7 @@ function loadAllGridOrders(grids) {
         const el = document.getElementById(id);
         if (el && el.parentNode === grid) grid.appendChild(el);
       });
-    } catch(e) {}
+    } catch (e) { }
   });
 }
 
@@ -1893,7 +1896,7 @@ function loadPanelOrder(grid) {
       const el = document.getElementById(id);
       if (el && el.parentNode === grid) grid.appendChild(el); // sposta in coda seguendo l'ordine
     });
-  } catch(e) {}
+  } catch (e) { }
 }
 function observeParliamentResize() {
   const container = document.getElementById('parliamentContainer');
