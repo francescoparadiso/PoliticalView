@@ -82,6 +82,8 @@ const Parliament = (() => {
       return;
     }
 
+    const totalVotesAll = parties.reduce((s, p) => s + (p.votes || 0), 0);
+
 // ✅ FIX MOBILE: usa larghezza reale, minimo più basso su schermi piccoli
 let W = container.clientWidth || window.innerWidth;
 const isMobile = W < 600;
@@ -103,6 +105,7 @@ if (!W || W < (isMobile ? 260 : 340)) {
     const colored = [];
     sorted.forEach(party => {
       const users = party.users || [];
+      const partyVotesPct = totalVotesAll > 0 && party.votes > 0 ? ((party.votes / totalVotesAll) * 100).toFixed(1) : null;
       for (let i = 0; i < party.seats; i++) {
         if (idx >= pts.length) break;
         colored.push({
@@ -115,10 +118,20 @@ if (!W || W < (isMobile ? 260 : 340)) {
           username: users[i]?.username || null,
           userId: users[i]?.userId || null,
           avatarUrl: users[i]?.avatarUrl || null,
+          partyVotesPct,
+          partyVotes: party.votes || null,
         });
         idx++;
       }
     });
+
+    // Track hidden parties
+    const hiddenParties = new Set();
+
+    const redrawOpacity = () => {
+      svg.selectAll('g.seat-group')
+        .style('opacity', d => hiddenParties.has(d.party) ? 0.08 : 1);
+    };
 
     // Calcolo majority e angolo prima di usarli per il bounding box
     const majority = Math.floor(totalSeats / 2) + 1;
@@ -264,11 +277,29 @@ if (!W || W < (isMobile ? 260 : 340)) {
           .transition().duration(150)
           .attr('transform', 'scale(1.8)');
         tooltip.style.opacity = 1;
-        const avatarHtml = d.avatarUrl ? `<img src="${d.avatarUrl}" class="tooltip-avatar">` : '';
+        const avatarHtml = d.avatarUrl
+          ? `<img src="${d.avatarUrl}" class="tooltip-avatar" onerror="this.style.display='none'">`
+          : `<span style="width:30px;height:30px;border-radius:50%;background:${d.color}33;display:inline-flex;align-items:center;justify-content:center;font-size:13px;color:${d.color};flex-shrink:0;border:1.5px solid ${d.color}66;">${(d.username||'?')[0].toUpperCase()}</span>`;
+        const partyColor = d.color || '#c5964a';
+        // compute party seat share from colored array
+        const partyTotal = colored.filter(x => x.party === d.party).length;
+        const totalAll   = colored.length;
+        const partySeatPct = totalAll > 0 ? ((partyTotal / totalAll) * 100).toFixed(1) : '—';
+        const partyVotesPct = d.partyVotesPct != null ? `<div class="tt-row"><span class="tt-label">Party votes</span><span class="tt-val" style="color:${partyColor}">${d.partyVotesPct}%</span></div>` : '';
+        const partyVotesAbs = d.partyVotes != null ? `<div class="tt-row"><span class="tt-label">Total votes</span><span class="tt-val">${Number(d.partyVotes).toLocaleString()}</span></div>` : '';
         tooltip.innerHTML = `
-          <div class="tt-party">${d.party}</div>
-          ${d.username ? `<div class="tt-user">${avatarHtml} ${d.username}</div>` : ''}
-          <div class="tt-seat">Seggio ${d.seatIdx + 1} / ${d.total}</div>
+          <div class="tt-party-header" style="border-left:3px solid ${partyColor};padding-left:8px;margin-bottom:8px;">
+            <div style="font-weight:700;font-size:.85rem;color:${partyColor};">${d.party}</div>
+            <div style="font-size:.7rem;color:var(--text3);margin-top:2px;">${partyTotal} seats · ${partySeatPct}% of parliament</div>
+          </div>
+          ${d.username ? `<div class="tt-user" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:6px 8px;background:rgba(255,255,255,0.04);border-radius:6px;">${avatarHtml}<div><strong style="font-size:.82rem;">${d.username}</strong><div style="font-size:.68rem;color:var(--text3);margin-top:1px;">Seat ${d.seatIdx + 1} of ${d.total}</div></div></div>` : `<div style="font-size:.72rem;color:var(--text3);margin-bottom:6px;">Seat ${d.seatIdx + 1} of ${d.total}</div>`}
+          <div class="tt-stats" style="display:flex;flex-direction:column;gap:3px;font-size:.72rem;">
+            <div class="tt-row"><span class="tt-label">Seats</span><span class="tt-val">${partyTotal} / ${totalAll}</span></div>
+            <div class="tt-row"><span class="tt-label">Seat share</span><span class="tt-val" style="color:${partyColor}">${partySeatPct}%</span></div>
+            ${partyVotesPct}
+            ${partyVotesAbs}
+          </div>
+          ${d.userId ? '<div style="font-size:.63rem;color:var(--gold);margin-top:6px;opacity:.8;">click to open profile ↗</div>' : ''}
         `;
       })
       .on('mousemove', event => {
@@ -298,14 +329,31 @@ if (!W || W < (isMobile ? 260 : 340)) {
       .text(`${totalSeats} seggi`);
 
     sorted.forEach(p => {
+      const seatPct = totalSeats > 0 ? ((p.seats / totalSeats) * 100).toFixed(1) : '0';
+      const votePct = totalVotesAll > 0 && p.votes > 0 ? ((p.votes / totalVotesAll) * 100).toFixed(1) : null;
       const el = document.createElement('div');
-      el.className = 'leg-item';
-      el.title = p.name;
+      el.className = 'leg-item leg-toggle';
+      el.title = `${p.name} — ${p.seats} seats (${seatPct}%)${votePct ? ` · ${votePct}% votes` : ''}`;
       el.innerHTML = `
         <span class="leg-dot" style="background:${p.color}"></span>
-        <span>${p.abbr || p.name}</span>
+        <span class="leg-name">${p.abbr || p.name}</span>
         <span class="leg-seats">${p.seats}</span>
+        <span class="leg-pct" style="color:${p.color};opacity:.75;font-size:.65rem;margin-left:2px;">${seatPct}%</span>
+        ${votePct ? `<span class="leg-vote-pct" style="font-size:.6rem;color:var(--text3);margin-left:3px;" title="${votePct}% of votes">🗳${votePct}%</span>` : ''}
       `;
+      el.style.cursor = 'pointer';
+      el.addEventListener('click', () => {
+        if (hiddenParties.has(p.name)) {
+          hiddenParties.delete(p.name);
+          el.style.opacity = '1';
+          el.querySelector('.leg-dot').style.opacity = '1';
+        } else {
+          hiddenParties.add(p.name);
+          el.style.opacity = '0.4';
+          el.querySelector('.leg-dot').style.opacity = '0.3';
+        }
+        redrawOpacity();
+      });
       legendContainer.appendChild(el);
     });
 
