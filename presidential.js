@@ -17,7 +17,7 @@ async function loadPresidentialElection(election, isLatestPresidential) {
 
   const candidates = [];
   for (const c of election.candidates) {
-    const userData = await localFetch('/user', { id: c.user || c.userId });
+    const userData = await localFetch('/user', { id: c.user || c.userId }).catch(() => ({}));
     const votes    = election.votes ? (election.votes[String(c.user || c.userId)] ?? c.voteCount ?? 0) : (c.voteCount ?? 0);
     const partyId  = c.party || c.partyId || null;
     candidates.push({ ...c, userData, votes, color: PALETTE[candidates.length % PALETTE.length], partyInfo: partyId ? (candPartyMap[partyId] || null) : null, partyId });
@@ -60,21 +60,22 @@ async function loadPresidentialElection(election, isLatestPresidential) {
   /* WINNER BANNER */
   const banner = document.getElementById('pres-winner-banner');
   if (winner && now > end) {
-    const av = winner.userData.avatarUrl
+    const username = winner.userData?.username || 'Unknown';
+    const av = winner.userData?.avatarUrl
       ? `<img src="${winner.userData.avatarUrl}" class="pres-winner-avatar" alt="">`
-      : `<div class="pres-winner-avatar pres-winner-initials">${winner.userData.username[0].toUpperCase()}</div>`;
+      : `<div class="pres-winner-avatar pres-winner-initials">${username[0]?.toUpperCase() || '?'}</div>`;
     banner.style.display = '';
     banner.innerHTML = `
       <div class="pres-winner-left">${av}<div>
         <div class="pres-winner-label">🏆 Presidente eletto</div>
-        <div class="pres-winner-name">${winner.userData.username}</div>
+        <div class="pres-winner-name">${username}</div>
       </div></div>
       <div class="pres-winner-votes">
         <div class="pres-winner-vcount">${winner.votes.toLocaleString()}</div>
         <div class="pres-winner-vsub">voti · ${totalVotes ? ((winner.votes / totalVotes) * 100).toFixed(1) + '%' : '—'}</div>
       </div>
     `;
-    fillStat('stat-leader', winner.userData.username);
+    fillStat('stat-leader', username);
   } else {
     banner.style.display = 'none';
   }
@@ -89,7 +90,7 @@ async function loadPresidentialElection(election, isLatestPresidential) {
       <span class="margin-label">Margin of victory</span>
       <span class="margin-val">${marginVotes.toLocaleString()} votes</span>
       <span class="margin-pct">${marginPct}%</span>
-      <span class="margin-vs">over ${candidates[1].userData.username}</span>
+      <span class="margin-vs">over ${candidates[1].userData?.username || 'Unknown'}</span>
     `;
   } else if (marginEl) {
     marginEl.style.display = 'none';
@@ -97,23 +98,25 @@ async function loadPresidentialElection(election, isLatestPresidential) {
 
   /* RACE */
   document.getElementById('pres-race').innerHTML = candidates.map((c, i) => {
-    const pct   = totalVotes ? ((c.votes / totalVotes) * 100).toFixed(1) : 0;
-    const barW  = maxVotes   ? ((c.votes / maxVotes)   * 100).toFixed(1) : 0;
-    const av    = c.userData.avatarUrl
+    const username = c.userData?.username || 'Unknown';
+    const votes = c.votes || 0;
+    const pct   = totalVotes ? ((votes / totalVotes) * 100).toFixed(1) : 0;
+    const barW  = maxVotes   ? ((votes / maxVotes)   * 100).toFixed(1) : 0;
+    const av    = c.userData?.avatarUrl
       ? `<img src="${c.userData.avatarUrl}" class="race-avatar" alt="">`
-      : `<div class="race-avatar race-initials" style="background:${c.color}33;color:${c.color}">${c.userData.username[0].toUpperCase()}</div>`;
+      : `<div class="race-avatar race-initials" style="background:${c.color}33;color:${c.color}">${username[0]?.toUpperCase() || '?'}</div>`;
     const partyChip = c.partyInfo ? `<span class="race-party-chip" style="background:${c.partyInfo.color}22;border-color:${c.partyInfo.color}55;color:${c.partyInfo.color}">${c.partyInfo.name}</span>` : '';
-    const gapStr    = i > 0 && candidates[0].votes > 0 ? `<span class="race-gap">-${(candidates[0].votes - c.votes).toLocaleString()}</span>` : '';
+    const gapStr    = i > 0 && candidates[0].votes > 0 ? `<span class="race-gap">-${(candidates[0].votes - votes).toLocaleString()}</span>` : '';
     const barColor  = c.isElected ? 'linear-gradient(90deg,#c5964a,#e8c97a)' : c.color;
     const rankClass = i === 0 ? 'race-rank-badge first' : 'race-rank-badge';
     return `<div class="race-row${c.isElected ? ' race-winner' : ''}">
       <div class="${rankClass}">${i + 1}</div>${av}
       <div class="race-info">
-        <div class="race-name">${c.userData.username}${c.isElected ? ' <span class="race-win-chip">Elected</span>' : ''}${gapStr}${partyChip}</div>
+        <div class="race-name">${username}${c.isElected ? ' <span class="race-win-chip">Elected</span>' : ''}${gapStr}${partyChip}</div>
         <div class="race-bar-wrap"><div class="race-bar" style="width:${barW}%;background:${barColor}"></div></div>
       </div>
       <div class="race-stats">
-        <div class="race-votes">${c.votes.toLocaleString()}</div>
+        <div class="race-votes">${votes.toLocaleString()}</div>
         <div class="race-pct">${pct}%</div>
       </div>
     </div>`;
@@ -144,12 +147,12 @@ async function loadPresidentialElection(election, isLatestPresidential) {
   _presidentChart = new Chart(document.getElementById('presidentChart').getContext('2d'), {
     type: 'bar',
     data: {
-      labels: candidates.map(c => c.userData.username),
-      datasets: [{ data: candidates.map(c => c.votes), backgroundColor: candidates.map(c => c.color + 'cc'), borderColor: getTheme() === 'light' ? 'rgba(0,0,0,0.2)' : candidates.map(c => c.color), borderWidth: 1.5, borderRadius: 6, borderSkipped: false }]
+      labels: candidates.map(c => c.userData?.username || 'Unknown'),
+      datasets: [{ data: candidates.map(c => c.votes || 0), backgroundColor: candidates.map(c => c.color + 'cc'), borderColor: getTheme() === 'light' ? 'rgba(0,0,0,0.2)' : candidates.map(c => c.color), borderWidth: 1.5, borderRadius: 6, borderSkipped: false }]
     },
     options: {
       responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false }, tooltip: { ...T.tt, callbacks: { title: i => candidates[i[0].dataIndex].userData.username, label: i => ` ${i.raw.toLocaleString()} voti (${totalVotes ? ((i.raw / totalVotes) * 100).toFixed(1) + '%' : '—'})` } } },
+      plugins: { legend: { display: false }, tooltip: { ...T.tt, callbacks: { title: i => candidates[i[0].dataIndex].userData?.username || 'Unknown', label: i => ` ${i.raw.toLocaleString()} voti (${totalVotes ? ((i.raw / totalVotes) * 100).toFixed(1) + '%' : '—'})` } } },
       scales: { y: { beginAtZero: true, ticks: { color: T.tick }, grid: { color: T.grid } }, x: { ticks: { color: T.tick2 }, grid: { display: false } } },
     },
   });
