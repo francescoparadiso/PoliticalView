@@ -52,7 +52,17 @@ async function loadPartyDetails(partyId) {
     return;
   }
   _currentPartyId = partyId;
-  localStorage.setItem('preferredPartyId', partyId);
+  try {
+    localStorage.setItem('preferredPartyId', partyId);
+  } catch (err) {
+    if (err.name === 'QuotaExceededError') {
+      // Libera spazio rimuovendo la cache 'we_*' e riprova
+      try { Object.keys(localStorage).filter(k => k.startsWith('we_')).forEach(k => localStorage.removeItem(k)); } catch (_) {}
+      try { localStorage.setItem('preferredPartyId', partyId); } catch (_) { console.warn('Unable to save preferredPartyId (storage full)'); }
+    } else {
+      throw err;
+    }
+  }
 
   // ── Clear stale content immediately before any async work ──
   showSkeletonPartyView();
@@ -61,18 +71,22 @@ async function loadPartyDetails(partyId) {
   if (memberCountSpan) memberCountSpan.textContent = '⏳';
 
   try {
+    // /elections non dipende dai dati del partito: la lanciamo subito, in parallelo con /party,
+    // così è già pronta (o quasi) quando serve più avanti per "LAST CONGRESS ELECTION".
+    const electionsDataPromise = localFetch('/elections', { countryId: _currentCountryId });
+
     const partyData = await localFetch('/party', { id: partyId });
     _currentPartyData = partyData;
 
     /* OVERVIEW */
     document.getElementById('partyOverview').innerHTML = `
       ${partyData.avatarUrl ? `<img src="${partyData.avatarUrl}" style="width:64px;height:64px;border-radius:50%;margin-bottom:8px;">` : ''}
-      <div class="party-overview-item"><span class="party-overview-label">Name</span><span>${escapeHtml(partyData.name)}</span></div>
-      <div class="party-overview-item"><span class="party-overview-label">Country</span><span>${_countryNamesMap.get(partyData.country) || partyData.country || _currentCountryId}</span></div>
-      <div class="party-overview-item"><span class="party-overview-label">Founded</span><span>${partyData.createdAt ? new Date(partyData.createdAt).toLocaleDateString() : '—'}</span></div>
-      ${partyData.description ? `<div class="party-overview-item"><span class="party-overview-label">Description</span><span>${escapeHtml(partyData.description)}</span></div>` : ''}
+      <div class="party-overview-item"><span class="party-overview-label">${t('party_name')}</span><span>${escapeHtml(partyData.name)}</span></div>
+      <div class="party-overview-item"><span class="party-overview-label">${t('party_country')}</span><span>${_countryNamesMap.get(partyData.country) || partyData.country || _currentCountryId}</span></div>
+      <div class="party-overview-item"><span class="party-overview-label">${t('party_founded')}</span><span>${partyData.createdAt ? new Date(partyData.createdAt).toLocaleDateString() : '—'}</span></div>
+      ${partyData.description ? `<div class="party-overview-item"><span class="party-overview-label">${t('party_description')}</span><span>${escapeHtml(partyData.description)}</span></div>` : ''}
       ${partyData.ethics ? `
-        <div class="party-overview-item"><span class="party-overview-label">Ethics</span><span>
+        <div class="party-overview-item"><span class="party-overview-label">${t('party_ethics')}</span><span>
           Militarism: ${partyData.ethics.militarism ?? '—'} |
           Isolationism: ${partyData.ethics.isolationism ?? '—'} |
           Imperialism: ${partyData.ethics.imperialism ?? '—'} |
@@ -81,10 +95,17 @@ async function loadPartyDetails(partyId) {
       ` : ''}
     `;
 
-    /* MEMBERS */
+    /* MEMBERS + LEADERSHIP — le due liste di utenti non dipendono l'una dall'altra: le scarichiamo insieme */
     const memberIds = partyData.members || [];
     if (memberCountSpan) memberCountSpan.textContent = `loading ${memberIds.length} members...`;
-    const members = (await Promise.all(memberIds.map(uid => localFetch('/user', { id: uid }).catch(() => null)))).filter(u => u && u._id);
+    const councilMembers = (partyData.councilMembers || []).filter(uid => uid !== partyData.leader && uid !== partyData.treasurer);
+    const allLeaderIds = [partyData.leader, partyData.treasurer, ...councilMembers].filter(Boolean);
+
+    const [membersRaw, leaderUsers] = await Promise.all([
+      Promise.all(memberIds.map(uid => localFetch('/user', { id: uid }).catch(() => null))),
+      Promise.all(allLeaderIds.map(uid => localFetch('/user', { id: uid }).catch(() => null))),
+    ]);
+    const members = membersRaw.filter(u => u && u._id);
     if (memberCountSpan) memberCountSpan.textContent = `${members.length} / ${memberIds.length}`;
 
     const now = new Date();
@@ -94,25 +115,20 @@ async function loadPartyDetails(partyId) {
 
     document.getElementById('partyMembersContainer').innerHTML = `
       <div style="display:flex;flex-direction:column;gap:4px;">
-        <div class="member-section-title"><span style="color:var(--green);">●</span> Active — last 3 days · ${activeMembers.length}</div>
+        <div class="member-section-title"><span style="color:var(--green);">●</span> ${t('active_members')} · ${activeMembers.length}</div>
         <div class="member-card-grid">
-          ${activeMembers.map(m => _memberCard(m, true)).join('') || '<p class="empty">No active members</p>'}
+          ${activeMembers.map(m => _memberCard(m, true)).join('') || `<p class="empty">${t('no_active_members')}</p>`}
         </div>
-        <div class="member-section-title" style="margin-top:16px;"><span style="color:var(--text3);">●</span> Inactive · ${inactiveMembers.length}</div>
+        <div class="member-section-title" style="margin-top:16px;"><span style="color:var(--text3);">●</span> ${t('inactive_members')} · ${inactiveMembers.length}</div>
         <div class="member-card-grid">
-          ${inactiveMembers.map(m => _memberCard(m, false)).join('') || '<p class="empty">No inactive members</p>'}
+          ${inactiveMembers.map(m => _memberCard(m, false)).join('') || `<p class="empty">${t('no_inactive_members')}</p>`}
         </div>
       </div>
     `;
 
     /* LEADERSHIP */
-    const councilMembers = (partyData.councilMembers || []).filter(uid => uid !== partyData.leader && uid !== partyData.treasurer);
-    const allLeaderIds = [partyData.leader, partyData.treasurer, ...councilMembers].filter(Boolean);
     const leaderMap = {};
-    for (const uid of allLeaderIds) {
-      const u = await localFetch('/user', { id: uid }).catch(() => null);
-      if (u) leaderMap[uid] = u;
-    }
+    allLeaderIds.forEach((uid, i) => { if (leaderUsers[i]) leaderMap[uid] = leaderUsers[i]; });
     document.getElementById('partyLeadershipContainer').innerHTML = `
       <div style="display:flex;flex-direction:column;gap:16px;">
         ${_leaderSection('👑 Leader', partyData.leader, leaderMap)}
@@ -133,7 +149,7 @@ async function loadPartyDetails(partyId) {
     `;
 
     /* LAST CONGRESS ELECTION */
-    const electionsData = await localFetch('/elections', { countryId: _currentCountryId });
+    const electionsData = await electionsDataPromise;
     const congressElections = (electionsData.items || []).filter(e => e.type === 'congress').sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     _lastCongressElection = congressElections[0];
 
@@ -160,18 +176,18 @@ async function loadPartyDetails(partyId) {
       const notElected = candidatesWithDetails.filter(c => !c.isElected);
 
       document.getElementById('partyElectedContainer').innerHTML = `
-        <div class="candidate-threshold">📊 Minimum votes to be elected: <strong>${minVotesToWin.toLocaleString()}</strong></div>
-        <h3>✅ Elected (${elected.length})</h3>
+        <div class="candidate-threshold">${t('minimum_votes_elected', { n: minVotesToWin.toLocaleString() })}</div>
+        <h3>${t('elected_count', { n: elected.length })}</h3>
         <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
-          ${elected.map(c => _candidatePill(c)).join('') || '<p>No elected candidates</p>'}
+          ${elected.map(c => _candidatePill(c)).join('') || `<p>${t('no_elected_candidates')}</p>`}
         </div>
-        <h3>❌ Not elected (${notElected.length})</h3>
+        <h3>${t('not_elected_count', { n: notElected.length })}</h3>
         <div style="display:flex;flex-wrap:wrap;gap:12px;">
-          ${notElected.map(c => _candidatePill(c)).join('') || '<p>No non-elected candidates</p>'}
+          ${notElected.map(c => _candidatePill(c)).join('') || `<p>${t('no_non_elected_candidates')}</p>`}
         </div>
       `;
     } else {
-      document.getElementById('partyElectedContainer').innerHTML = '<p>No congress elections found.</p>';
+      document.getElementById('partyElectedContainer').innerHTML = `<p>${t('no_congress_elections')}</p>`;
     }
 
     /* MEMBER ORGANIZER */
@@ -182,7 +198,7 @@ async function loadPartyDetails(partyId) {
     hideSkeletonPartyView();
   } catch (err) {
     console.error(err);
-    document.getElementById('partyOverview').innerHTML = '<p>Error loading party data.</p>';
+    document.getElementById('partyOverview').innerHTML = `<p>${t('error_loading_party')}</p>`;
     endHeavyOperation();
     hideSkeletonPartyView();
   }

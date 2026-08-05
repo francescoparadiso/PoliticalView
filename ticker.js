@@ -53,52 +53,73 @@ async function fetchAllElectionsOnce() {
     const allCountries = countriesData?.items || [];
     if (!allCountries.length) throw new Error('No countries');
 
+    // Show news for the most populous nations first.
+    allCountries.sort((a, b) =>
+      (b.rankings?.countryActivePopulation?.value || 0) -
+      (a.rankings?.countryActivePopulation?.value || 0)
+    );
+
     const now = Date.now();
-    const messages = [];
 
-    for (const country of allCountries) {
-      try {
-        const data = await localFetch('/elections', { countryId: country._id }, { useCache: false, ttl: 5 * 60 * 1000 });
-        const elections = data?.items || [];
-        const countryName = country.name || country._id;
+    // ── Fase 1: elezioni per ogni paese, tutte in parallelo (stesso microtask → un unico batch) ──
+    const perCountry = await Promise.all(
+      allCountries.map(country =>
+        localFetch('/elections', { countryId: country._id }, { useCache: true, ttl: 3 * 60 * 1000 })
+          .then(data => ({ country, elections: data?.items || [] }))
+          .catch(() => ({ country, elections: [] }))
+      )
+    );
 
-        for (const e of elections) {
-          const start = toUTCTimestamp(e.votesStartAt);
-          const end   = toUTCTimestamp(e.votesEndAt);
-          if (!start || !end) continue;
+    // ── Fase 2: individua le elezioni "upcoming" o "live" che richiedono un dettaglio ──
+    const relevant = [];
+    for (const { country, elections } of perCountry) {
+      const countryName = country.name || country._id;
+      for (const e of elections) {
+        const start = toUTCTimestamp(e.votesStartAt);
+        const end   = toUTCTimestamp(e.votesEndAt);
+        if (!start || !end) continue;
+        if (now < start || (now >= start && now <= end)) {
+          relevant.push({ e, countryName, start, end });
+        }
+      }
+    }
 
-          const type      = e.type === 'president' ? 'PRES' : 'CONG';
-          const startDate = new Date(start).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
-          const endDate   = new Date(end).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    // ── Fase 3: dettagli di tutte le elezioni rilevanti, in parallelo (un unico batch) ──
+    const details = await Promise.all(
+      relevant.map(r =>
+        localFetch('/election', { id: r.e._id }, { useCache: true, ttl: now >= r.start ? 2 * 60 * 1000 : 5 * 60 * 1000 })
+          .catch(() => null)
+      )
+    );
 
-          if (now < start) {
-            let candidateCount = 0;
-            try {
-              const detail = await localFetch('/election', { id: e._id }, { useCache: false, ttl: 5 * 60 * 1000 });
-              candidateCount = detail.candidates?.length || 0;
-            } catch (_) {}
-            let msg = `${countryName} ${type} · candidacy open · voting starts ${startDate}`;
-            if (candidateCount > 0) msg += ` (${candidateCount} candidates)`;
-            messages.push(msg);
-          } else if (now >= start && now <= end) {
-            let voterCount = 0;
-            try {
-              const detail = await localFetch('/election', { id: e._id }, { useCache: false, ttl: 2 * 60 * 1000 });
-              if (detail.votes && typeof detail.votes === 'object') {
-                voterCount = Object.keys(detail.votes).length;
-              } else if (detail.votesCount) {
-                voterCount = detail.votesCount;
-              } else {
-                voterCount = detail.candidates?.reduce((s, c) => s + (c.voteCount || 0), 0) || 0;
-              }
-            } catch (_) {}
-            let msg = `${countryName} ${type} · 🔴 live · ends ${endDate}`;
-            if (voterCount > 0) msg += ` · ${voterCount.toLocaleString()} votes`;
-            messages.push(msg);
+    const messages = relevant.map((r, idx) => {
+      const { e, countryName, start, end } = r;
+      const detail    = details[idx];
+      const type      = e.type === 'president' ? 'PRES' : 'CONG';
+      const startDate = new Date(start).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+      const endDate   = new Date(end).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+
+      if (now < start) {
+        const candidateCount = detail?.candidates?.length || 0;
+        let msg = `${countryName} ${type} · candidacy open · voting starts ${startDate}`;
+        if (candidateCount > 0) msg += ` (${candidateCount} candidates)`;
+        return msg;
+      } else {
+        let voterCount = 0;
+        if (detail) {
+          if (detail.votes && typeof detail.votes === 'object') {
+            voterCount = Object.keys(detail.votes).length;
+          } else if (detail.votesCount) {
+            voterCount = detail.votesCount;
+          } else {
+            voterCount = detail.candidates?.reduce((s, c) => s + (c.voteCount || 0), 0) || 0;
           }
         }
-      } catch (_) {}
-    }
+        let msg = `${countryName} ${type} · 🔴 live · ends ${endDate}`;
+        if (voterCount > 0) msg += ` · ${voterCount.toLocaleString()} votes`;
+        return msg;
+      }
+    });
 
     _tickerMessages = messages.length ? messages.slice(0, 30) : ['✅ No ongoing or upcoming elections worldwide'];
     _rebuildTickerContent();

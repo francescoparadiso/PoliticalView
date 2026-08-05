@@ -27,7 +27,7 @@ function initMemberOrganizer(members, partyId) {
   if (autoBtn) {
     autoBtn.onclick = () => {
       if (!_lastMinVotesToWin) {
-        alert('No election threshold data available. Please load a congress election first.');
+        alert(t('no_election_threshold'));
         return;
       }
       autoAssignSupporters(members, partyId, _lastMinVotesToWin);
@@ -38,7 +38,7 @@ function initMemberOrganizer(members, partyId) {
 function autoAssignSupporters(members, partyId, minVotesToWin) {
   const groupsWithCandidate = _endorsementGroups.filter(g => g.candidateId !== null);
   if (groupsWithCandidate.length === 0) {
-    alert('No candidate selected in any group. Please select candidates first.');
+    alert(t('no_candidate_selected'));
     return;
   }
 
@@ -73,7 +73,7 @@ function autoAssignSupporters(members, partyId, minVotesToWin) {
   renderEndorsementGroups(members, partyId);
 
   const totalAssigned = _endorsementGroups.reduce((sum, g) => sum + g.supporterIds.length, 0);
-  alert(`Auto-assign completed: ${totalAssigned} supporters distributed among ${groupsWithCandidate.length} candidates.`);
+  alert(t('auto_assign_done', { assigned: totalAssigned, groups: groupsWithCandidate.length }));
 }
 
 function renderEndorsementGroups(members, partyId) {
@@ -81,7 +81,7 @@ function renderEndorsementGroups(members, partyId) {
   if (!container) return;
 
   if (_endorsementGroups.length === 0) {
-    container.innerHTML = '<p class="empty">No cadidates yet. Click "+ New candidate" to start.</p>';
+    container.innerHTML = `<p class="empty">${t('no_candidates_yet')}</p>`;
     return;
   }
 
@@ -257,8 +257,8 @@ function _saveEndorsementGroups(partyId) {
       localStorage.setItem(key, payload);
       return true;
     } catch (err2) {
-      console.error('Impossibile salvare i gruppi (storage piena):', err2);
-      alert('Spazio di archiviazione locale esaurito: i dati di endorsement non sono stati salvati. Provo a liberare spazio o riduci il numero di supporter.');
+      console.error('Unable to save endorsement groups (storage full):', err2);
+      alert(t('storage_full_alert'));
       return false;
     }
   }

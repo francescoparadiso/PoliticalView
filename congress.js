@@ -32,7 +32,7 @@ async function loadElectionsHistory() {
     const legendDiv = document.getElementById('timelineLegend');
     if (legendDiv) legendDiv.innerHTML = '';
     const filterSel = document.getElementById('timelinePartyFilter');
-    if (filterSel) filterSel.innerHTML = '<option value="">All parties</option>';
+    if (filterSel) filterSel.innerHTML = `<option value="">${t('all_parties')}</option>`;
     // Forza la rimozione del canvas e ricreazione (opzionale ma sicuro)
     const canvas = document.getElementById('timelineChart');
     if (canvas) {
@@ -60,8 +60,18 @@ async function loadElectionsHistory() {
 async function loadPartiesForCountry(countryId) {
   startHeavyOperation('Loading parties...');
   try {
-    const data = await localFetch('/parties', { countryId });
-    const parties = data?.items || [];
+    const limit = 100;
+    let page = 1;
+    let allParties = [];
+    while (true) {
+      const data  = await localFetch('/parties', { countryId, page, limit }, { useCache: true, ttl: CACHE_TTL_LONG });
+      const items = data?.items || [];
+      allParties.push(...items);
+      if (items.length < limit || page > 20) break; // fine risultati o safety cap
+      page++;
+    }
+    // Filtro di sicurezza: se l'API non filtrasse già per country lato server
+    const parties = allParties.filter(p => !p.country || p.country === countryId);
     parties.forEach(p => {
       if (!_partyColorMap.has(p._id)) _partyColorMap.set(p._id, stringToColor(p._id));
       _partyNamesMap.set(p._id, p.name);
@@ -132,9 +142,7 @@ function renderTimeline(congressElections) {
 
 async function loadTimelineData(elections, electionIds) {
   startHeavyOperation('Loading timeline data...');
-  const partySeatsPerElection = [];
-
-  for (const election of elections) {
+  const partySeatsPerElection = await Promise.all(elections.map(async election => {
     try {
       const data = await localFetch('/election', { id: election._id });
       const elected = (data?.candidates || []).filter(c => c.isElected);
@@ -143,29 +151,29 @@ async function loadTimelineData(elections, electionIds) {
         const pid = String(c.party || c.partyId || 'independent');
         seatMap[pid] = (seatMap[pid] || 0) + 1;
       });
-      partySeatsPerElection.push(seatMap);
-    } catch (_) { partySeatsPerElection.push({}); }
-  }
+      return seatMap;
+    } catch (_) { return {}; }
+  }));
 
   const allPids = new Set();
   partySeatsPerElection.forEach(m => Object.keys(m).forEach(pid => allPids.add(pid)));
 
-  for (const pid of allPids) {
-    if (pid === 'independent' || _partyNamesMap.has(pid)) continue;
+  const _pidsToFetch = [...allPids].filter(pid => pid !== 'independent' && !_partyNamesMap.has(pid));
+  await Promise.all(_pidsToFetch.map(async pid => {
     try {
       const partyData = await localFetch('/party', { id: pid });
       if (partyData?.name) _partyNamesMap.set(pid, partyData.name);
     } catch (_) { }
-  }
+  }));
 
-  _historicTurnouts = [];
-  for (const election of elections) {
+  const _turnoutResults = await Promise.all(elections.map(async election => {
     try {
       const data = await localFetch('/election', { id: election._id });
       const totalVotes = data.votesCount || (data.candidates || []).reduce((s, c) => s + (c.voteCount || 0), 0);
-      _historicTurnouts.push({ electionId: election._id, totalVotes: totalVotes || 0, date: election.createdAt, seats: (data.candidates || []).filter(c => c.isElected).length });
-    } catch (_) { }
-  }
+      return { electionId: election._id, totalVotes: totalVotes || 0, date: election.createdAt, seats: (data.candidates || []).filter(c => c.isElected).length };
+    } catch (_) { return null; }
+  }));
+  _historicTurnouts = _turnoutResults.filter(Boolean);
 
   const datasets = [];
   const legendDiv = document.getElementById('timelineLegend');
@@ -210,7 +218,7 @@ async function loadTimelineData(elections, electionIds) {
     const filterSelect = document.getElementById('timelinePartyFilter');
     if (filterSelect) {
       const currentVal = filterSelect.value;
-      filterSelect.innerHTML = '<option value="">All parties</option>';
+      filterSelect.innerHTML = `<option value="">${t('all_parties')}</option>`;
       datasets.filter(d => d.label).forEach(d => {
         const opt = document.createElement('option');
         opt.value = d.label;
@@ -564,7 +572,7 @@ async function loadCongressElection(election) {
     if (countdownEl) countdownEl.style.display = 'none';
   } else {
     let statusText = '', statusClass = '';
-    if (now < start) { statusText = '🗳 Candidatura'; statusClass = 'pres-badge-pending'; }
+    if (now < start) { statusText = t('status_candidacy'); statusClass = 'pres-badge-pending'; }
     else if (now <= end) { statusText = '🔴 In corso'; statusClass = 'pres-badge-live'; isOngoing = true; }
     else { statusText = '✅ Closed'; statusClass = 'pres-badge-done'; }
 
@@ -668,7 +676,7 @@ async function loadCongressElection(election) {
     document.getElementById('stat-leader').parentElement.style.display = 'none';
     document.getElementById('stat-enp').parentElement.style.display = 'none';
 
-    setStatus(`Voting in progress · ${totalVotes.toLocaleString()} votes so far`, 'loading');
+    setStatus(`Voting in progress · ${t('votes_so_far', { n: totalVotes.toLocaleString() })}`, 'loading');
     document.getElementById('badgeCount').textContent = `Voting · ${candidates.length} candidates`;
     endHeavyOperation();
     return;
@@ -758,10 +766,15 @@ async function loadCongressElection(election) {
   document.getElementById('exportCsvBtn').style.display = 'inline-flex';
 
   const partySeatsMap = {}, partyUsersMap = {};
+  const candidateVotesMap = {};
   elected.forEach(c => {
     const pid = String(c.party || c.partyId || 'independent');
     partySeatsMap[pid] = (partySeatsMap[pid] || 0) + 1;
-    (partyUsersMap[pid] = partyUsersMap[pid] || []).push(String(c.userId || c.user || ''));
+    const uid = String(c.userId || c.user || '');
+    (partyUsersMap[pid] = partyUsersMap[pid] || []).push(uid);
+    let votes = c.voteCount || 0;
+    if (election.votes && election.votes[uid] != null) votes = election.votes[uid];
+    candidateVotesMap[uid] = votes;
   });
 
   const allPartiesData = await loadPartiesForCountry(election.country || _currentCountryId);
@@ -780,18 +793,20 @@ async function loadCongressElection(election) {
   Object.values(allPartyDetailsMap).forEach(pd => { if (pd?.leader) allUserIds.add(String(pd.leader)); });
 
   const userMap = {};
-  for (const uid of allUserIds) userMap[uid] = await localFetch('/user', { id: uid }).catch(() => ({}));
+  const _userIdsArr = [...allUserIds];
+  const _userResults = await Promise.all(_userIdsArr.map(uid => localFetch('/user', { id: uid }).catch(() => ({}))));
+  _userIdsArr.forEach((uid, i) => { userMap[uid] = _userResults[i]; });
 
   const electedParties = Object.keys(partySeatsMap).map(pid => {
     if (!pid) return { id: 'unknown', name: 'Unknown', abbr: 'N/A', seats: 0, members: 0, votes: 0, leaderName: null, leaderAvatarUrl: null, leaderId: null, color: '#6b7280', users: [] };
     const color = getPartyColor(pid);
-    if (pid === 'independent') return { id: pid, name: 'Independent', abbr: 'IND', seats: partySeatsMap[pid], members: 0, votes: partyVotesMap[pid] || 0, leaderName: null, leaderAvatarUrl: null, leaderId: null, color, users: (partyUsersMap[pid] || []).map(uid => ({ userId: uid, ...userMap[uid] })) };
+    if (pid === 'independent') return { id: pid, name: 'Independent', abbr: 'IND', seats: partySeatsMap[pid], members: 0, votes: partyVotesMap[pid] || 0, leaderName: null, leaderAvatarUrl: null, leaderId: null, color, users: (partyUsersMap[pid] || []).map(uid => ({ userId: uid, ...userMap[uid], votes: candidateVotesMap[uid] || 0 })) };
     const pd = allPartyDetailsMap[pid] || {};
     const name = pd.name || _partyNamesMap.get(pid) || `Party ${pid.slice(-6)}`;
     const leaderId = pd.leader ? String(pd.leader) : null;
     const leaderData = leaderId ? userMap[leaderId] : null;
     const rawMembers = Array.isArray(pd.members) ? pd.members.length : Number(pd.membersCount || pd.memberCount || 0);
-    return { id: pid, name, abbr: makeAbbr(name), seats: partySeatsMap[pid], members: rawMembers, votes: partyVotesMap[pid] || 0, leaderName: leaderData?.username || null, leaderAvatarUrl: leaderData?.avatarUrl || null, leaderId, color, users: (partyUsersMap[pid] || []).map(uid => ({ userId: uid, ...userMap[uid] })) };
+    return { id: pid, name, abbr: makeAbbr(name), seats: partySeatsMap[pid], members: rawMembers, votes: partyVotesMap[pid] || 0, leaderName: leaderData?.username || null, leaderAvatarUrl: leaderData?.avatarUrl || null, leaderId, color, users: (partyUsersMap[pid] || []).map(uid => ({ userId: uid, ...userMap[uid], votes: candidateVotesMap[uid] || 0 })) };
   }).sort((a, b) => b.seats - a.seats);
 
   const allParties = Object.keys(allPartyDetailsMap).map(pid => {
@@ -925,7 +940,7 @@ function renderSimulator(allParties, totalSeatsCurrent) {
   const projBasisEl = document.getElementById('simProjBasis');
   if (projBasisEl) {
     projBasisEl.textContent = totalVotesAll > 0
-      ? `using ${totalVotesAll.toLocaleString()} total votes from last election`
+      ? t('using_total_votes', { n: totalVotesAll.toLocaleString() })
       : 'using member share (no vote data)';
   }
 
@@ -981,7 +996,7 @@ function renderSimulator(allParties, totalSeatsCurrent) {
           </div>
           <div class="sim-pc-stats">
             <span title="Vote share from last election"><span style="color:var(--text3)">🗳</span> ${votePctStr}</span>
-            <span title="Projected votes">${hasVoters ? `~${projVotesStr} votes` : ''}</span>
+            <span title="${t('projected_votes_title')}">${hasVoters ? `~${projVotesStr} ${t('votes_suffix')}` : ''}</span>
             <span class="sim-pc-seats-now" title="Current seats">${p.seats || 0} now</span>
             <strong class="sim-pc-seats-proj" style="color:${p.color}">${p.projSeats} seats</strong>
           </div>

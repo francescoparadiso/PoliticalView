@@ -6,7 +6,7 @@ async function loadElection(id) {
     const select = document.getElementById('electionSelect');
     electionId = select ? select.value : '';
   }
-  if (!electionId) { setStatus('No election selected', 'error'); return; }
+  if (!electionId) { setStatus(t('no_election_selected'), 'error'); return; }
 
   if (_pendingRequest) {
     clearTimeout(_pendingRequest.timeout);
@@ -17,56 +17,64 @@ async function loadElection(id) {
   const btnEl = document.getElementById('loadBtn');
   selectEl.disabled = true; btnEl.disabled = true;
 
-  _pendingRequest = {};
-  _pendingRequest.timeout = setTimeout(async () => {
-    _pendingRequest = null;
-    setStatus('Loading election...', 'loading');
+  // NB: il lavoro vero e proprio è debounced di 300ms dentro il setTimeout.
+  // Avvolgiamo tutto in una Promise che si risolve solo a lavoro concluso
+  // (successo, errore o early-return), così chi fa `await loadElection(id)`
+  // (es. SenateView) ottiene davvero i dati aggiornati, invece di risolversi
+  // subito e leggere `window._lastElectedParties` ancora vecchio.
+  return new Promise(resolveOuter => {
+    _pendingRequest = {};
+    _pendingRequest.timeout = setTimeout(async () => {
+      _pendingRequest = null;
+      setStatus(t('loading_election'), 'loading');
 
-    try {
-      const controller = new AbortController();
-      _pendingRequest = { controller };
+      try {
+        const controller = new AbortController();
+        _pendingRequest = { controller };
 
-      const election = await localFetch('/election', { id: electionId });
+        const election = await localFetch('/election', { id: electionId });
 
-      if (_congressCountdownInterval) { clearInterval(_congressCountdownInterval); _congressCountdownInterval = null; }
-      if (window._presCountdown) { clearInterval(window._presCountdown); window._presCountdown = null; }
+        if (_congressCountdownInterval) { clearInterval(_congressCountdownInterval); _congressCountdownInterval = null; }
+        if (window._presCountdown) { clearInterval(window._presCountdown); window._presCountdown = null; }
 
-      if (!election || !election.candidates) {
-        console.warn('No detail for this ID:', electionId);
-        showView('congress');
+        if (!election || !election.candidates) {
+          console.warn('No detail for this ID:', electionId);
+          showView('congress');
+          hideSkeleton();
+          setStatus(t('election_not_found'), 'error');
+          return;
+        }
+
+        const isLatestPresidential = (election.type === 'president' && election._id === _latestPresidentialElectionId);
+        _currentIsLatestPresidential = isLatestPresidential;
+
+        if (election.type === 'president') await loadPresidentialElection(election, isLatestPresidential);
+        else if (election.type === 'congress') await loadCongressElection(election);
+        else throw new Error(`Unknown election type: ${election.type}`);
+
+        setStatus(t('updated_data'), '');
+
+        if (window.umami) {
+          window.umami.track('election-load', {
+            electionId: election._id,
+            type: election.type,
+            countryId: election.country || _currentCountryId,
+          });
+        }
+      } catch (err) {
+        console.error(err);
         hideSkeleton();
-        setStatus('⚠️ Election not found or incomplete.', 'error');
-        return;
+        if (err.message.includes('429')) {
+          setStatus(t('too_many_requests'), 'error');
+        } else if (err.name !== 'AbortError') {
+          setStatus(t('generic_error', { msg: err.message }), 'error');
+        }
+      } finally {
+        selectEl.disabled = false; btnEl.disabled = false;
+        resolveOuter();
       }
-
-      const isLatestPresidential = (election.type === 'president' && election._id === _latestPresidentialElectionId);
-      _currentIsLatestPresidential = isLatestPresidential;
-
-      if (election.type === 'president') await loadPresidentialElection(election, isLatestPresidential);
-      else if (election.type === 'congress') await loadCongressElection(election);
-      else throw new Error(`Unknown election type: ${election.type}`);
-
-      setStatus('Updated Data', '');
-
-      if (window.umami) {
-        window.umami.track('election-load', {
-          electionId: election._id,
-          type: election.type,
-          countryId: election.country || _currentCountryId,
-        });
-      }
-    } catch (err) {
-      console.error(err);
-      hideSkeleton();
-      if (err.message.includes('429')) {
-        setStatus('⚠️ Too many requests! Retry after some seconds.', 'error');
-      } else if (err.name !== 'AbortError') {
-        setStatus('Errore: ' + err.message, 'error');
-      }
-    } finally {
-      selectEl.disabled = false; btnEl.disabled = false;
-    }
-  }, 300);
+    }, 300);
+  });
 }
 
 /* ── BOOT ── */
@@ -79,14 +87,14 @@ document.addEventListener('DOMContentLoaded', () => {
   loadPartyColors('parties_6813b6d446e731854c7ac7a2.csv').then(async () => {
     console.log(`🎨 ${_partyColorMap.size} colors loaded from CSV`);
     loadCountries();
-    try {
-      const data = await localFetch('/countries', {}, { useCache: false });
-      _currentCountryData = (data?.items || []).find(c => c._id === _currentCountryId) || null;
-    } catch (_) {
-      _currentCountryData = null;
-    }
 
-    loadElectionsHistory();
+    // La fetch di /countries (per _currentCountryData) non blocca più loadElectionsHistory:
+    // girano in parallelo, e se rientrano nello stesso microtask finiscono nello stesso batch.
+    const countryDataPromise = localFetch('/countries', {}, { useCache: false })
+      .then(data => { _currentCountryData = (data?.items || []).find(c => c._id === _currentCountryId) || null; })
+      .catch(() => { _currentCountryData = null; });
+
+    await Promise.all([countryDataPromise, loadElectionsHistory()]);
     startTicker();
     initPanelSystem();
   });
@@ -179,7 +187,24 @@ document.addEventListener('DOMContentLoaded', () => {
   /* Clear cache */
   document.getElementById('clearCacheBtn')?.addEventListener('click', () => {
     cacheClear();
-    setStatus('Cache cleared', '');
+    setStatus(t('cache_cleared'), '');
     setTimeout(() => setStatus('', ''), 2000);
   });
+});
+
+/* Re-render whatever dynamic view is currently visible whenever the
+   language changes, so already-loaded content updates immediately
+   instead of only the next time it's reloaded. */
+document.addEventListener('langchange', () => {
+  if (document.getElementById('senateOverlay')?.classList.contains('active')) {
+    SenateView.render(window._lastElectedParties || []);
+  }
+  if (document.getElementById('party-view')?.style.display !== 'none' && _currentPartyId) {
+    loadPartyDetails(_currentPartyId);
+  }
+  if (document.getElementById('congress-view')?.style.display !== 'none' && _currentCongressElectionId) {
+    loadElection(_currentCongressElectionId);
+  } else if (document.getElementById('president-view')?.style.display !== 'none' && window._lastPresData?.election) {
+    loadPresidentialElection(window._lastPresData.election, _currentIsLatestPresidential);
+  }
 });

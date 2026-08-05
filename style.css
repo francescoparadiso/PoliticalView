@@ -2518,3 +2518,611 @@ body {
 
 [data-theme="light"] .sim-party-card { background: #fff; }
 [data-theme="light"] .sim-party-card:hover { box-shadow: 0 3px 12px rgba(0,0,0,.09); }
+
+
+
+/* ══════════════════════════════════════════════════════════
+   SENATE VIEW — horizontal semicircle + party cards below
+══════════════════════════════════════════════════════════ */
+
+.senate-overlay {
+  position: fixed; inset: 0; z-index: 40000;
+  display: none;
+  background: var(--bg-overlay, rgba(7,9,13,0.92));
+  backdrop-filter: blur(6px);
+}
+.senate-overlay.active { display: block; }
+
+.senate-stage {
+  position: relative;
+  width: 100%; height: 100%;
+  overflow-y: auto; /* per scrollare le card partito se troppe */
+  background: var(--bg, #07090d);
+  display: flex;
+  flex-direction: column;
+  padding: 0 10px;
+}
+
+.senate-vignette {
+  position: absolute; inset: 0; pointer-events: none;
+  box-shadow: inset 0 0 200px 60px rgba(0,0,0,0.5);
+  z-index: 5;
+}
+
+.senate-header {
+  position: absolute; top: 0; left: 0; right: 0;
+  display: flex; align-items: flex-start; justify-content: space-between;
+  padding: 12px 20px;
+  z-index: 20;
+  pointer-events: none;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.senate-title-wrap { pointer-events: none; }
+.senate-title {
+  font-family: "Playfair Display", serif;
+  font-size: clamp(1.2rem, 3vw, 2rem);
+  letter-spacing: .2em;
+  font-weight: 700;
+  color: var(--gold2, #e8c97a);
+  text-shadow: 0 0 24px rgba(232,201,122,.4), 0 2px 6px rgba(0,0,0,.8);
+}
+.senate-subtitle {
+  margin-top: 2px;
+  font-family: "Sora", sans-serif;
+  font-size: .7rem;
+  letter-spacing: .08em;
+  color: rgba(232,201,122,.65);
+  text-transform: uppercase;
+}
+.senate-close-btn {
+  pointer-events: all;
+  background: rgba(0,0,0,.4);
+  border: 1px solid rgba(232,201,122,.35);
+  color: #e8c97a;
+  width: 36px; height: 36px; border-radius: 50%;
+  cursor: pointer; font-size: .9rem;
+  transition: background .15s, transform .15s;
+}
+.senate-close-btn:hover { background: rgba(232,201,122,.18); transform: scale(1.08); }
+
+/* ── controls ── */
+.senate-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  pointer-events: all;
+  background: rgba(0,0,0,0.3);
+  padding: 4px 10px;
+  border-radius: 40px;
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+.senate-controls input,
+.senate-controls select,
+.senate-controls button {
+  background: var(--s2, #141820);
+  border: 1px solid var(--bd2, rgba(255,255,255,0.11));
+  border-radius: 6px;
+  color: var(--text, #dde2ec);
+  font-family: 'Sora', sans-serif;
+  font-size: .7rem;
+  padding: 3px 8px;
+  outline: none;
+}
+.senate-controls input:focus,
+.senate-controls select:focus {
+  border-color: var(--gold, #c5964a);
+}
+.senate-controls button {
+  background: var(--gold, #c5964a);
+  color: #07090d;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity .15s;
+  border: none;
+  padding: 3px 10px;
+}
+.senate-controls button:hover { opacity: .8; }
+
+/* ── seats container (center) ── */
+.senate-seats {
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 10;
+  min-height: 300px;
+  width: 100%;
+  margin: 100px 0 10px;
+}
+.senate-empty {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  color: #ffdca0; font-family: "Sora", sans-serif; font-size: 1rem;
+  text-align: center; max-width: 400px; line-height: 1.5;
+  background: rgba(0,0,0,.55); border: 1px solid rgba(232,201,122,.4);
+  border-radius: 10px; padding: 16px 22px;
+  z-index: 25;
+}
+
+/* ── cards (senators) ── */
+.senate-card {
+  position: absolute;
+  transform: translate(-50%, -100%) rotate(var(--sc-rot, 0deg));
+  transform-origin: 50% 100%;
+  cursor: pointer;
+  transition: transform .18s ease, filter .18s ease;
+  filter: drop-shadow(0 4px 10px rgba(0,0,0,.55));
+  animation: senateCardIn .3s ease both;
+  animation-delay: var(--sc-delay, 0ms);
+  opacity: 0;
+}
+@keyframes senateCardIn {
+  to { opacity: 1; transform: translate(-50%, -100%) rotate(var(--sc-rot, 0deg)) scale(1); }
+}
+.senate-card:hover {
+  transform: translate(-50%, -100%) rotate(var(--sc-rot, 0deg)) scale(1.15) translateY(-4px);
+  filter: drop-shadow(0 0 18px var(--sc-color, #e8c97a)) drop-shadow(0 6px 14px rgba(0,0,0,.6));
+  z-index: 9999 !important;
+}
+.senate-card-body {
+  width: 100%; height: 100%;
+  display: flex; flex-direction: column;
+  border-radius: 8px;
+  border: 2px solid var(--sc-color, #6b7280);
+  background: rgba(12,10,7,.6);
+  box-shadow: 0 0 0 1px rgba(255,255,255,.06) inset, 0 0 14px -4px var(--sc-color, transparent);
+  overflow: hidden;
+}
+.senate-card-figure {
+  width: 100%; height: 55%;
+  flex: 0 0 auto;
+  background: var(--sc-color, #6b7280) center/cover no-repeat;
+  display: flex; align-items: center; justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+.senate-card-figure::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(255,255,255,.08), transparent 40%, rgba(0,0,0,.35) 100%);
+}
+.senate-card-party-badge {
+  position: absolute; top: 2px; left: 2px;
+  background: rgba(0,0,0,.6);
+  border: 1px solid var(--sc-color, #e8c97a);
+  color: #fff;
+  font-family: "Sora", sans-serif;
+  font-size: .5rem; font-weight: 700;
+  padding: 1px 4px; border-radius: 4px;
+  line-height: 1.3;
+  z-index: 2;
+  max-width: 82%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  transform-origin: top left;
+  transform: rotate(calc(-1 * var(--sc-rot, 0deg)));
+}
+.senate-card-initial {
+  font-family: "Playfair Display", serif;
+  font-size: 1.2rem; font-weight: 700; color: #fff;
+  opacity: .85;
+  text-shadow: 0 1px 4px rgba(0,0,0,.7);
+}
+.senate-card-info {
+  flex: 1 1 auto;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 1px;
+  padding: 3px 2px;
+  background: rgba(0,0,0,.25);
+}
+.senate-card-name {
+  text-align: center;
+  font-family: "Sora", sans-serif;
+  font-size: .58rem;
+  font-weight: 700;
+  color: #f2e6c8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  text-shadow: 0 1px 3px rgba(0,0,0,.9);
+}
+.senate-card-stats {
+  display: flex; align-items: center; justify-content: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.senate-card-stat {
+  font-family: "Sora", sans-serif;
+  font-size: .5rem; font-weight: 600;
+  color: #d8cba0;
+  text-shadow: 0 1px 2px rgba(0,0,0,.9);
+  white-space: nowrap;
+}
+.senate-card-bar {
+  width: 80%; height: 3px;
+  background: rgba(255,255,255,0.15);
+  border-radius: 2px;
+  margin-top: 2px;
+  overflow: hidden;
+}
+.senate-card-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width .4s ease;
+}
+.senate-card-hover {
+  position: absolute;
+  bottom: 100%; left: 50%;
+  transform: rotate(calc(-1 * var(--sc-rot, 0deg))) translate(-50%, -8px);
+  transform-origin: 50% 100%;
+  background: rgba(10,8,5,.95);
+  border: 1px solid var(--sc-color, #e8c97a);
+  border-radius: 8px;
+  padding: 6px 10px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .15s;
+  box-shadow: 0 8px 20px rgba(0,0,0,.6);
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.senate-card:hover .senate-card-hover { opacity: 1; }
+.senate-card-hover-name  { font-size: .72rem; font-weight: 700; color: #fff; }
+.senate-card-hover-party { font-size: .62rem; font-weight: 600; margin-bottom: 3px; }
+.senate-card-hover-row   { font-size: .62rem; color: #c9c4b8; line-height: 1.3; }
+
+/* ── party cards: standalone, anchored near their own arc position (no longer a joined grid) ── */
+.senate-party-cards {
+  display: none; /* replaced by radially-anchored .senate-party-card elements inside .senate-seats */
+}
+.senate-party-card {
+  position: absolute;
+  width: 240px;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(4px);
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-left: 4px solid var(--pc-color, #c5964a);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: background .15s, transform .15s;
+  z-index: 60;
+  cursor: default;
+}
+/* Anchor point = outside edge of the arc, in the group's own direction.
+   The transform pushes the card fully past that point so it never
+   overlaps the seats — above for top groups, to the side for the ends. */
+/* All anchors pin the BOTTOM edge of the card (its "end") to the anchor
+   point, never the top/center. This way any growth from a long member
+   list only extends upward/sideways, away from the seat arc below — it
+   can never sink down and get hidden behind the senator cards, which
+   sit on a much higher z-index. */
+.senate-party-card.anchor-top   { transform: translate(-50%, -100%); }
+.senate-party-card.anchor-left  { transform: translate(-100%, -100%); }
+.senate-party-card.anchor-right { transform: translate(0%, -100%); }
+.senate-party-card.anchor-top:hover   { transform: translate(-50%, -100%) scale(1.03); }
+.senate-party-card.anchor-left:hover  { transform: translate(-100%, -100%) scale(1.03); }
+.senate-party-card.anchor-right:hover { transform: translate(0%, -100%) scale(1.03); }
+.senate-party-card:hover {
+  background: rgba(0,0,0,0.72);
+  z-index: 9998;
+}
+.spc-stats-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.spc-stat {
+  font-family: "Sora", sans-serif;
+  font-size: .66rem;
+  font-weight: 600;
+  color: #d8cba0;
+  white-space: nowrap;
+}
+.spc-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.spc-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.spc-name {
+  font-weight: 700;
+  font-size: .85rem;
+  color: var(--text);
+  flex: 1;
+}
+.spc-seats {
+  font-size: .7rem;
+  color: var(--gold2, #e8c97a);
+  background: rgba(232,201,122,.12);
+  padding: 1px 8px;
+  border-radius: 12px;
+}
+.spc-votes {
+  font-size: .7rem;
+  color: var(--text2);
+}
+.spc-members {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.spc-member {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .75rem;
+  color: var(--text2);
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background .1s;
+}
+.spc-member:hover {
+  background: rgba(255,255,255,0.04);
+}
+.spc-avatar {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--s3);
+}
+.spc-avatar-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .7rem;
+  font-weight: 700;
+  color: var(--text3);
+}
+.spc-member-name {
+  flex: 1;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.spc-member-votes {
+  font-weight: 600;
+  color: var(--gold2);
+  white-space: nowrap;
+}
+.spc-member-pct {
+  font-size: .65rem;
+  color: var(--text3);
+  min-width: 36px;
+  text-align: right;
+}
+
+/* ── table view (full-screen fallback) ── */
+.senate-table {
+  width: 90%; max-width: 800px;
+  margin: 80px auto 20px;
+  border-collapse: collapse;
+  background: rgba(0,0,0,0.3);
+  border-radius: 12px;
+  overflow: hidden;
+  backdrop-filter: blur(4px);
+  font-size: .8rem;
+}
+.senate-table th,
+.senate-table td {
+  padding: 6px 10px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.senate-table th {
+  background: rgba(0,0,0,0.2);
+  color: var(--gold2, #e8c97a);
+  font-weight: 600;
+  cursor: pointer;
+}
+.senate-table th:hover { background: rgba(0,0,0,0.3); }
+.senate-table tr:hover td { background: rgba(255,255,255,0.04); }
+.senate-table-avatar {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.senate-table-link {
+  color: var(--gold2, #e8c97a);
+  text-decoration: none;
+  font-weight: 700;
+}
+.senate-table-link:hover { text-decoration: underline; }
+
+/* ── animations ── */
+:root { --senate-animations: auto; }
+.senate-card-figure {
+  animation: senateGlowPulse 4s ease-in-out infinite;
+  animation-delay: var(--sc-pulse-delay, 0s);
+}
+@keyframes senateGlowPulse {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(255,255,255,.06) inset, 0 0 8px -4px var(--sc-color, transparent); }
+  50%      { box-shadow: 0 0 0 1px rgba(255,255,255,.06) inset, 0 0 14px -2px var(--sc-color, transparent); }
+}
+.senate-card:hover .senate-card-figure { animation-play-state: paused; }
+
+.senate-stage::before, .senate-stage::after {
+  content: '';
+  position: absolute; top: 12%; width: 140px; height: 140px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,170,60,.10), transparent 70%);
+  animation: senateTorchFlicker 5s ease-in-out infinite;
+  pointer-events: none; z-index: 2;
+}
+.senate-stage::before { left: 4%; animation-delay: .3s; }
+.senate-stage::after  { right: 4%; animation-delay: 1.6s; }
+@keyframes senateTorchFlicker {
+  0%, 100% { opacity: .4; transform: scale(1); }
+  30%      { opacity: .7; transform: scale(1.04); }
+  55%      { opacity: .3; transform: scale(.96); }
+  80%      { opacity: .6; transform: scale(1.02); }
+}
+
+.senate-title {
+  animation: senateTitleGlow 4s ease-in-out infinite;
+}
+@keyframes senateTitleGlow {
+  0%, 100% { text-shadow: 0 0 20px rgba(232,201,122,.4), 0 2px 6px rgba(0,0,0,.8); }
+  50%      { text-shadow: 0 0 30px rgba(232,201,122,.6), 0 2px 6px rgba(0,0,0,.8); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .senate-card, .senate-card-figure,
+  .senate-stage::before, .senate-stage::after,
+  .senate-title { animation: none !important; }
+  .senate-card { opacity: 1 !important; transform: translate(-50%, -100%) rotate(var(--sc-rot, 0deg)) scale(1) !important; }
+}
+
+/* ── light theme ── */
+[data-theme="light"] .senate-overlay {
+  background: rgba(230,232,240,0.92);
+}
+[data-theme="light"] .senate-stage {
+  background: var(--bg, #f9f9f1);
+}
+[data-theme="light"] .senate-title {
+  color: var(--gold2, #b8860b);
+  text-shadow: 0 0 20px rgba(184,134,11,0.3);
+}
+[data-theme="light"] .senate-subtitle {
+  color: rgba(154,114,48,0.7);
+}
+[data-theme="light"] .senate-controls {
+  background: rgba(255,255,255,0.5);
+  border-color: rgba(0,0,0,0.08);
+}
+[data-theme="light"] .senate-controls input,
+[data-theme="light"] .senate-controls select {
+  background: #fff;
+  color: #1a1e2e;
+}
+[data-theme="light"] .senate-party-card {
+  background: rgba(255,255,255,0.4);
+  border-color: rgba(0,0,0,0.08);
+}
+[data-theme="light"] .senate-party-card:hover {
+  background: rgba(255,255,255,0.6);
+}
+[data-theme="light"] .spc-name { color: #1a1e2e; }
+[data-theme="light"] .spc-member-name { color: #1a1e2e; }
+[data-theme="light"] .spc-member:hover { background: rgba(0,0,0,0.04); }
+[data-theme="light"] .senate-table {
+  background: rgba(255,255,255,0.5);
+}
+[data-theme="light"] .senate-table th {
+  background: rgba(0,0,0,0.06);
+  color: #9a7230;
+}
+[data-theme="light"] .senate-card-body {
+  background: rgba(255,255,255,0.7);
+}
+[data-theme="light"] .senate-card-name {
+  color: #1a1e2e;
+  text-shadow: none;
+}
+[data-theme="light"] .senate-card-stat {
+  color: #4a5568;
+  text-shadow: none;
+}
+[data-theme="light"] .senate-card-figure::after {
+  background: linear-gradient(180deg, rgba(255,255,255,.2), transparent 40%, rgba(0,0,0,.05) 100%);
+}
+[data-theme="light"] .senate-card-hover {
+  background: #fff;
+  border-color: rgba(154,114,48,0.4);
+  color: #1a1e2e;
+}
+[data-theme="light"] .senate-card-hover-name { color: #1a1e2e; }
+[data-theme="light"] .senate-card-hover-row  { color: #4a5568; }
+[data-theme="light"] .senate-card-hover-party { color: #9a7230; }
+
+@media (max-width: 640px) {
+  .senate-card-stats { display: none; }
+  .senate-card-name { font-size: .5rem; }
+  .senate-controls { padding: 4px 8px; gap: 4px; }
+  .senate-controls input,
+  .senate-controls select,
+  .senate-controls button { font-size: .6rem; padding: 2px 6px; }
+  .senate-party-cards { grid-template-columns: 1fr; padding: 10px 10px 20px; }
+  .spc-members { max-height: 120px; }
+}/* ── Senate overlay adjustments ── */
+.senate-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40000;
+  display: none;
+  background: var(--bg-overlay, rgba(7,9,13,0.92));
+  backdrop-filter: blur(6px);
+}
+.senate-overlay.active {
+  display: block;
+}
+.senate-stage {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg, #07090d);
+  display: flex;
+  flex-direction: column;
+}
+.senate-seats {
+  flex: 1;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+.senate-empty {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #ffdca0;
+  font-family: "Sora", sans-serif;
+  font-size: 1rem;
+  text-align: center;
+  max-width: 400px;
+  line-height: 1.5;
+  background: rgba(0,0,0,.55);
+  border: 1px solid rgba(232,201,122,.4);
+  border-radius: 10px;
+  padding: 16px 22px;
+  z-index: 25;
+}
+[data-theme="light"] .senate-overlay {
+  background: rgba(230,232,240,0.92);
+}
+[data-theme="light"] .senate-stage {
+  background: var(--bg, #f9f9f1);
+}
+@media (max-width: 700px) {
+  .senate-stage .sv2-main {
+    flex-direction: column;
+  }
+  .senate-stage .sv2-right-panel {
+    width: 100%;
+    min-width: 0;
+    max-height: 40%;
+    border-left: none;
+    border-top: 1px solid rgba(197,150,74,.12);
+    overflow-y: auto;
+  }
+  .senate-stage .sv2-chamber-wrap {
+    height: 60%;
+  }
+}

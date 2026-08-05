@@ -150,7 +150,7 @@ function safeDestroy(canvasId) {
 /* ── EXPORT CSV ── */
 function exportCSV(parties, filename = 'parliament.csv') {
   if (!parties || !parties.length) { alert('No data to export.'); return; }
-  const headers  = ['Party', 'Abbr', 'Seats', 'Members', 'Votes', 'Seat %', 'Leader', 'Color'];
+  const headers  = [t('col_party'), t('col_abbr'), t('col_seats'), t('col_members'), t('col_votes'), t('col_seat_pct'), t('col_leader'), t('col_color')];
   const totalSeats = parties.reduce((s, p) => s + p.seats, 0);
   const rows = parties.map(p => [
     `"${p.name.replace(/"/g, '""')}"`,

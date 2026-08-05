@@ -1,5 +1,8 @@
 /* ═══ CONFIG & GLOBALS ═══ */
-const API_BASE = 'https://politicalview-proxy.fra-paradiso2.workers.dev/cache';
+/* ── API ufficiale WarEra (tRPC) ──
+   Il Cloudflare Worker + cache-service (duckdns) sono stati rimossi:
+   l'app parla ora direttamente con le API ufficiali. */
+const API_BASE = 'https://politicalview-proxy.fra-paradiso2.workers.dev/trpc';
 const APP_BASE = 'https://app.warera.io';
 
 const PALETTE = [
@@ -23,7 +26,12 @@ let _pendingRequest              = null;
 let _electionHistory             = [];
 let _currentCongressElectionId   = null;
 let _timelineElectionIds         = [];
-let _currentCountryId            = localStorage.getItem('preferredCountryId') || '6813b6d446e731854c7ac7a2';
+// Se il tool viene aperto con ?country=<countryId> (es. link da un'app esterna),
+// quel valore ha priorità sulla preferenza salvata in precedenza.
+const _urlParams      = new URLSearchParams(window.location.search);
+const _urlCountryId   = _urlParams.get('country');
+if (_urlCountryId) { try { localStorage.setItem('preferredCountryId', _urlCountryId); } catch (_) {} }
+let _currentCountryId            = _urlCountryId || localStorage.getItem('preferredCountryId') || '6813b6d446e731854c7ac7a2';
 let _currentCountryData          = null;
 let _historicTurnouts            = [];
 let _congressCountdownInterval   = null;

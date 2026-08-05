@@ -15,13 +15,15 @@ async function loadPresidentialElection(election, isLatestPresidential) {
     } catch (_) {}
   }));
 
-  const candidates = [];
-  for (const c of election.candidates) {
-    const userData = await localFetch('/user', { id: c.user || c.userId }).catch(() => ({}));
+  const candidateUsers = await Promise.all(
+    election.candidates.map(c => localFetch('/user', { id: c.user || c.userId }).catch(() => ({})))
+  );
+  const candidates = election.candidates.map((c, i) => {
+    const userData = candidateUsers[i];
     const votes    = election.votes ? (election.votes[String(c.user || c.userId)] ?? c.voteCount ?? 0) : (c.voteCount ?? 0);
     const partyId  = c.party || c.partyId || null;
-    candidates.push({ ...c, userData, votes, color: PALETTE[candidates.length % PALETTE.length], partyInfo: partyId ? (candPartyMap[partyId] || null) : null, partyId });
-  }
+    return { ...c, userData, votes, color: PALETTE[i % PALETTE.length], partyInfo: partyId ? (candPartyMap[partyId] || null) : null, partyId };
+  });
   candidates.sort((a, b) => b.votes - a.votes);
 
   const totalVotes = election.votesCount || candidates.reduce((s, c) => s + c.votes, 0);
@@ -33,7 +35,7 @@ async function loadPresidentialElection(election, isLatestPresidential) {
   /* STATUS BADGE */
   const now = new Date(), end = new Date(election.votesEndAt), start = new Date(election.votesStartAt);
   let statusText = '', statusClass = '';
-  if (now < start)      { statusText = '🗳 Candidatura'; statusClass = 'pres-badge-pending'; }
+  if (now < start)      { statusText = t('status_candidacy'); statusClass = 'pres-badge-pending'; }
   else if (now <= end)  { statusText = '🔴 In progress'; statusClass = 'pres-badge-live'; }
   else                  { statusText = '✅ Concluded';   statusClass = 'pres-badge-done'; }
   const sb = document.getElementById('pres-status-badge');
@@ -72,7 +74,7 @@ async function loadPresidentialElection(election, isLatestPresidential) {
       </div></div>
       <div class="pres-winner-votes">
         <div class="pres-winner-vcount">${winner.votes.toLocaleString()}</div>
-        <div class="pres-winner-vsub">voti · ${totalVotes ? ((winner.votes / totalVotes) * 100).toFixed(1) + '%' : '—'}</div>
+        <div class="pres-winner-vsub">${t('col_votes').toLowerCase()} · ${totalVotes ? ((winner.votes / totalVotes) * 100).toFixed(1) + '%' : '—'}</div>
       </div>
     `;
     fillStat('stat-leader', username);
@@ -88,7 +90,7 @@ async function loadPresidentialElection(election, isLatestPresidential) {
     marginEl.style.display = '';
     marginEl.innerHTML = `
       <span class="margin-label">Margin of victory</span>
-      <span class="margin-val">${marginVotes.toLocaleString()} votes</span>
+      <span class="margin-val">${marginVotes.toLocaleString()} ${t('votes_suffix')}</span>
       <span class="margin-pct">${marginPct}%</span>
       <span class="margin-vs">over ${candidates[1].userData?.username || 'Unknown'}</span>
     `;
@@ -152,7 +154,7 @@ async function loadPresidentialElection(election, isLatestPresidential) {
     },
     options: {
       responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false }, tooltip: { ...T.tt, callbacks: { title: i => candidates[i[0].dataIndex].userData?.username || 'Unknown', label: i => ` ${i.raw.toLocaleString()} voti (${totalVotes ? ((i.raw / totalVotes) * 100).toFixed(1) + '%' : '—'})` } } },
+      plugins: { legend: { display: false }, tooltip: { ...T.tt, callbacks: { title: i => candidates[i[0].dataIndex].userData?.username || 'Unknown', label: i => ` ${i.raw.toLocaleString()} ${t('col_votes').toLowerCase()} (${totalVotes ? ((i.raw / totalVotes) * 100).toFixed(1) + '%' : '—'})` } } },
       scales: { y: { beginAtZero: true, ticks: { color: T.tick }, grid: { color: T.grid } }, x: { ticks: { color: T.tick2 }, grid: { display: false } } },
     },
   });
@@ -161,7 +163,7 @@ async function loadPresidentialElection(election, isLatestPresidential) {
   document.getElementById('pres-meta').innerHTML = `
     <span>📅 Inizio: <strong>${new Date(election.votesStartAt).toLocaleDateString('it')}</strong></span>
     <span>⏱ Fine: <strong>${new Date(election.votesEndAt).toLocaleDateString('it')}</strong></span>
-    <span>🗳 Voti totali: <strong>${totalVotes.toLocaleString()}</strong></span>
+    <span>${t('votes_total_label', { n: totalVotes.toLocaleString() })}</span>
     <a href="${APP_BASE}/country/${election.country}/election/${election._id}" target="_blank" class="pres-meta-link">Vai all'elezione →</a>
   `;
 
@@ -170,7 +172,7 @@ async function loadPresidentialElection(election, isLatestPresidential) {
 
   window._lastPresData = { candidates, totalVotes, election };
   renderPresSimulator(candidates, totalVotes, election);
-  document.getElementById('badgeCount').textContent = `Presidenziale · ${totalVotes} voti`;
+  document.getElementById('badgeCount').textContent = t('badge_presidential', { n: totalVotes });
 
   if (isLatestPresidential) {
     const govData = await getGovernmentWithDetails(election.country || _currentCountryId);
@@ -297,32 +299,44 @@ async function renderPresidentialHistoricWinners(currentElectionId) {
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="5" style="color:var(--text3);padding:8px;">Loading…</td></tr>';
 
-  const rows = [];
-  for (const e of presidentialElections.slice(0, 8)) {
-    if (e._id === currentElectionId) continue;
-    try {
-      const data = await localFetch('/election', { id: e._id }, { useCache: true, ttl: CACHE_TTL_LONG });
-      if (!data?.candidates) continue;
-      const winner = data.candidates.find(c => c.isElected);
-      if (!winner) continue;
-      const userData  = await localFetch('/user', { id: winner.user || winner.userId }, { useCache: true, ttl: CACHE_TTL_LONG });
-      const totalV    = data.votesCount || data.candidates.reduce((s, c) => s + (c.voteCount || 0), 0);
-      const winVotes  = data.votes ? (data.votes[String(winner.user || winner.userId)] ?? winner.voteCount ?? 0) : (winner.voteCount ?? 0);
-      const pct       = totalV > 0 ? ((winVotes / totalV) * 100).toFixed(1) : '—';
-      const runnerUp  = data.candidates.filter(c => !c.isElected).sort((a, b) => {
-        const av = data.votes ? (data.votes[String(a.user || a.userId)] ?? a.voteCount ?? 0) : (a.voteCount ?? 0);
-        const bv = data.votes ? (data.votes[String(b.user || b.userId)] ?? b.voteCount ?? 0) : (b.voteCount ?? 0);
-        return bv - av;
-      })[0];
-      let runnerUpName = '—';
-      if (runnerUp) {
-        const ru = await localFetch('/user', { id: runnerUp.user || runnerUp.userId }, { useCache: true, ttl: CACHE_TTL_LONG });
-        runnerUpName = ru?.username || '—';
-      }
-      const partyInfo = winner.party ? { name: _partyNamesMap.get(winner.party) || '' } : null;
-      rows.push({ date: new Date(e.createdAt).toLocaleDateString('en', { month: 'short', year: 'numeric' }), username: userData?.username || '—', partyInfo, winVotes, pct, totalV, runnerUpName });
-    } catch (_) {}
-  }
+  // Fase 1: elezioni da mostrare (esclusa quella corrente), fetch dei dettagli tutti in parallelo (un unico batch)
+  const targetElections = presidentialElections.slice(0, 8).filter(e => e._id !== currentElectionId);
+  const electionDetails = await Promise.all(
+    targetElections.map(e => localFetch('/election', { id: e._id }, { useCache: true, ttl: CACHE_TTL_LONG }).catch(() => null))
+  );
+
+  // Fase 2: per ogni elezione valida, individua vincitore/secondo e fetch degli user, tutti in parallelo
+  const prepared = targetElections.map((e, i) => {
+    const data = electionDetails[i];
+    if (!data?.candidates) return null;
+    const winner = data.candidates.find(c => c.isElected);
+    if (!winner) return null;
+    const runnerUp = data.candidates.filter(c => !c.isElected).sort((a, b) => {
+      const av = data.votes ? (data.votes[String(a.user || a.userId)] ?? a.voteCount ?? 0) : (a.voteCount ?? 0);
+      const bv = data.votes ? (data.votes[String(b.user || b.userId)] ?? b.voteCount ?? 0) : (b.voteCount ?? 0);
+      return bv - av;
+    })[0];
+    return { e, data, winner, runnerUp };
+  });
+
+  const validPrepared = prepared.filter(Boolean);
+  const [winnerUsers, runnerUpUsers] = await Promise.all([
+    Promise.all(validPrepared.map(p => localFetch('/user', { id: p.winner.user || p.winner.userId }, { useCache: true, ttl: CACHE_TTL_LONG }).catch(() => null))),
+    Promise.all(validPrepared.map(p => p.runnerUp
+      ? localFetch('/user', { id: p.runnerUp.user || p.runnerUp.userId }, { useCache: true, ttl: CACHE_TTL_LONG }).catch(() => null)
+      : Promise.resolve(null))),
+  ]);
+
+  const rows = validPrepared.map((p, i) => {
+    const { e, data, winner } = p;
+    const userData  = winnerUsers[i];
+    const totalV    = data.votesCount || data.candidates.reduce((s, c) => s + (c.voteCount || 0), 0);
+    const winVotes  = data.votes ? (data.votes[String(winner.user || winner.userId)] ?? winner.voteCount ?? 0) : (winner.voteCount ?? 0);
+    const pct       = totalV > 0 ? ((winVotes / totalV) * 100).toFixed(1) : '—';
+    const runnerUpName = runnerUpUsers[i]?.username || '—';
+    const partyInfo = winner.party ? { name: _partyNamesMap.get(winner.party) || '' } : null;
+    return { date: new Date(e.createdAt).toLocaleDateString('en', { month: 'short', year: 'numeric' }), username: userData?.username || '—', partyInfo, winVotes, pct, totalV, runnerUpName };
+  });
 
   if (!rows.length) { panel.style.display = 'none'; return; }
   tbody.innerHTML = rows.map(r => `

@@ -78,7 +78,7 @@ const Parliament = (() => {
 
     const totalSeats = parties.reduce((s, p) => s + p.seats, 0);
     if (!totalSeats) {
-      container.innerHTML = '<p class="empty">Nessun seggio disponibile.</p>';
+      container.innerHTML = `<p class="empty">${t('no_seats_available')}</p>`;
       return;
     }
 
@@ -106,6 +106,9 @@ if (!W || W < (isMobile ? 260 : 340)) {
     sorted.forEach(party => {
       const users = party.users || [];
       const partyVotesPct = totalVotesAll > 0 && party.votes > 0 ? ((party.votes / totalVotesAll) * 100).toFixed(1) : null;
+      const rankedUsers = [...users].sort((a, b) => (b.votes || 0) - (a.votes || 0));
+      const rankMap = new Map(rankedUsers.map((u, i) => [u.userId, i + 1]));
+      const topVotesInParty = rankedUsers[0]?.votes || 0;
       for (let i = 0; i < party.seats; i++) {
         if (idx >= pts.length) break;
         colored.push({
@@ -118,8 +121,13 @@ if (!W || W < (isMobile ? 260 : 340)) {
           username: users[i]?.username || null,
           userId: users[i]?.userId || null,
           avatarUrl: users[i]?.avatarUrl || null,
+          level: users[i]?.level ?? users[i]?.lvl ?? null,
+          userVotes: users[i]?.votes ?? null,
           partyVotesPct,
           partyVotes: party.votes || null,
+          partyMembers: party.members || null,
+          partyRank: users[i]?.userId ? rankMap.get(users[i].userId) : null,
+          topVotesInParty,
         });
         idx++;
       }
@@ -285,8 +293,8 @@ if (!W || W < (isMobile ? 260 : 340)) {
         const partyTotal = colored.filter(x => x.party === d.party).length;
         const totalAll   = colored.length;
         const partySeatPct = totalAll > 0 ? ((partyTotal / totalAll) * 100).toFixed(1) : '—';
-        const partyVotesPct = d.partyVotesPct != null ? `<div class="tt-row"><span class="tt-label">Party votes</span><span class="tt-val" style="color:${partyColor}">${d.partyVotesPct}%</span></div>` : '';
-        const partyVotesAbs = d.partyVotes != null ? `<div class="tt-row"><span class="tt-label">Total votes</span><span class="tt-val">${Number(d.partyVotes).toLocaleString()}</span></div>` : '';
+        const partyVotesPct = d.partyVotesPct != null ? `<div class="tt-row"><span class="tt-label">${t('party_votes_label')}</span><span class="tt-val" style="color:${partyColor}">${d.partyVotesPct}%</span></div>` : '';
+        const partyVotesAbs = d.partyVotes != null ? `<div class="tt-row"><span class="tt-label">${t('total_votes_label')}</span><span class="tt-val">${Number(d.partyVotes).toLocaleString()}</span></div>` : '';
         tooltip.innerHTML = `
           <div class="tt-party-header" style="border-left:3px solid ${partyColor};padding-left:8px;margin-bottom:8px;">
             <div style="font-weight:700;font-size:.85rem;color:${partyColor};">${d.party}</div>
@@ -299,7 +307,7 @@ if (!W || W < (isMobile ? 260 : 340)) {
             ${partyVotesPct}
             ${partyVotesAbs}
           </div>
-          ${d.userId ? '<div style="font-size:.63rem;color:var(--gold);margin-top:6px;opacity:.8;">click to open profile ↗</div>' : ''}
+          ${d.userId ? '<div style="font-size:.63rem;color:var(--gold);margin-top:6px;opacity:.8;">click for player card ↗</div>' : ''}
         `;
       })
       .on('mousemove', event => {
@@ -314,7 +322,7 @@ if (!W || W < (isMobile ? 260 : 340)) {
       })
       .on('click', (event, d) => {
         if (d.userId) {
-          window.open(`${window.APP_BASE || 'https://app.warera.io'}/user/${d.userId}`, '_blank');
+          openPlayerCard(d);
         } else if (d.partyId && typeof openPartyModal === 'function') {
           openPartyModal(d.partyId, d.party);
         }
@@ -362,3 +370,94 @@ if (!W || W < (isMobile ? 260 : 340)) {
 
   return { render };
 })();
+
+/* ── PLAYER CARD MODAL ── */
+function openPlayerCard(d) {
+  closePlayerCard();
+
+  const partyColor = d.color || '#c5964a';
+  const seatShare = (d.partyVotesPct != null) ? `${d.partyVotesPct}%` : null;
+  const avatarHtml = d.avatarUrl
+    ? `<img src="${d.avatarUrl}" class="pc-avatar" onerror="this.style.display='none'">`
+    : `<div class="pc-avatar pc-avatar-fallback" style="background:${partyColor}33;color:${partyColor};border-color:${partyColor}66;">${(d.username || '?')[0].toUpperCase()}</div>`;
+
+  const topVotes = d.topVotesInParty || d.userVotes || 1;
+  const votePct = Math.max(2, Math.min(100, Math.round(((d.userVotes || 0) / topVotes) * 100)));
+  const isTopOfParty = d.partyRank === 1;
+  const rankLabel = d.partyRank ? `#${d.partyRank}${d.total ? ` of ${d.total}` : ''} in party` : null;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'pc-modal-overlay';
+  overlay.innerHTML = `
+    <div class="pc-modal-box" style="--pc-color:${partyColor};">
+      <button class="pc-modal-close" aria-label="Close">✕</button>
+      <div class="pc-modal-header">
+        <div class="pc-avatar-ring">${avatarHtml}</div>
+        <div class="pc-header-info">
+          <div class="pc-username">${escapeHtml(d.username || 'Unknown')} ${isTopOfParty ? '<span class="pc-crown" title="Top vote-getter in party">👑</span>' : ''}</div>
+          <div class="pc-party" style="color:${partyColor};">${escapeHtml(d.party || 'Independent')}</div>
+          ${rankLabel ? `<div class="pc-rank-badge">${rankLabel}</div>` : ''}
+        </div>
+      </div>
+
+      <div class="pc-vote-section">
+        <div class="pc-vote-header">
+          <span class="pc-stat-label">${t('votes_received')}</span>
+          <span class="pc-vote-number" data-target="${d.userVotes || 0}">0</span>
+        </div>
+        <div class="pc-bar-track">
+          <div class="pc-bar-fill" style="background:${partyColor};width:0%;" data-w="${votePct}"></div>
+        </div>
+        <div class="pc-bar-caption">${d.partyRank && d.total > 1 ? (isTopOfParty ? 'Top of the party' : `${votePct}% of the party's top vote-getter`) : ''}</div>
+      </div>
+
+      <div class="pc-stats-grid">
+        ${d.level != null ? `
+          <div class="pc-stat"><span class="pc-stat-label">Level</span><span class="pc-stat-val">⭐ ${d.level}</span></div>
+        ` : ''}
+        <div class="pc-stat"><span class="pc-stat-label">Seat</span><span class="pc-stat-val">${d.seatIdx + 1} / ${d.total}</span></div>
+        ${d.partyMembers != null ? `<div class="pc-stat"><span class="pc-stat-label">Party members</span><span class="pc-stat-val">${d.partyMembers}</span></div>` : ''}
+        ${seatShare ? `<div class="pc-stat"><span class="pc-stat-label">Party vote share</span><span class="pc-stat-val" style="color:${partyColor}">${seatShare}</span></div>` : ''}
+        ${d.partyVotes != null ? `<div class="pc-stat"><span class="pc-stat-label">${t('party_total_votes_label')}</span><span class="pc-stat-val">${Number(d.partyVotes).toLocaleString()}</span></div>` : ''}
+      </div>
+
+      <a class="pc-profile-link" href="${(window.APP_BASE || 'https://app.warera.io')}/user/${d.userId}" target="_blank" rel="noopener">Open profile ↗</a>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.body.style.overflow = 'hidden';
+
+  // Animate the vote bar and count-up number in on the next frame
+  requestAnimationFrame(() => {
+    const bar = overlay.querySelector('.pc-bar-fill');
+    if (bar) bar.style.width = bar.dataset.w + '%';
+    const numEl = overlay.querySelector('.pc-vote-number');
+    if (numEl) _animateCount(numEl, 0, parseInt(numEl.dataset.target, 10) || 0, 650);
+  });
+
+  const close = () => closePlayerCard();
+  overlay.querySelector('.pc-modal-close').addEventListener('click', close);
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  document.addEventListener('keydown', _pcEscHandler);
+}
+
+function _animateCount(el, from, to, duration) {
+  const start = performance.now();
+  const step = now => {
+    const t = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - t, 3);
+    el.textContent = Math.round(from + (to - from) * eased).toLocaleString();
+    if (t < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+function closePlayerCard() {
+  document.querySelectorAll('.pc-modal-overlay').forEach(el => el.remove());
+  document.body.style.overflow = '';
+  document.removeEventListener('keydown', _pcEscHandler);
+}
+
+function _pcEscHandler(e) {
+  if (e.key === 'Escape') closePlayerCard();
+}
