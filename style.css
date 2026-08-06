@@ -1945,11 +1945,37 @@ body {
   display: flex;
   align-items: center;
   gap: 14px;
+  position: relative;
   transition: transform 0.2s, border-color 0.2s;
 }
 .candidate-card:hover {
   border-color: var(--gold);
   transform: translateY(-2px);
+}
+.candidate-card-leading {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 1px var(--gold) inset;
+}
+.candidate-card-rank {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text3);
+}
+.candidate-card-level {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--gold2);
+}
+.candidate-card-party-logo {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  object-fit: cover;
+  vertical-align: middle;
+  margin-right: 4px;
 }
 .candidate-card-avatar {
   width: 48px;
@@ -1979,6 +2005,17 @@ body {
 .votes-count {
   color: var(--gold2);
   font-weight: 700;
+}
+.candidate-card-article {
+  font-size: 0.75rem;
+  margin-top: 6px;
+}
+.candidate-card-article a {
+  color: var(--gold2);
+  text-decoration: none;
+}
+.candidate-card-article a:hover {
+  text-decoration: underline;
 }
 /* ══════════════════════════════════════════════════════════
    VISUAL IMPROVEMENTS v2

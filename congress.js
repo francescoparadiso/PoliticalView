@@ -1,3 +1,21 @@
+/* ── COLOR HELPER: hex/rgb string → rgba() con alpha, per sfondi card ── */
+function hexToRgba(color, alpha = 1) {
+  if (!color) return `rgba(150,150,150,${alpha})`;
+  color = color.trim();
+  if (color.startsWith('rgb')) {
+    const nums = color.match(/[\d.]+/g);
+    if (nums && nums.length >= 3) return `rgba(${nums[0]},${nums[1]},${nums[2]},${alpha})`;
+    return `rgba(150,150,150,${alpha})`;
+  }
+  let hex = color.replace('#', '');
+  if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+  if (hex.length !== 6) return `rgba(150,150,150,${alpha})`;
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 /* ── ELECTIONS HISTORY ── */
 async function loadElectionsHistory() {
   try {
@@ -620,7 +638,6 @@ async function loadCongressElection(election) {
     document.getElementById('congressMainGrid').style.display = 'none';
     document.getElementById('congressChartsRow').style.display = 'none';
     document.getElementById('allPartiesRow').style.display = 'none';
-    document.getElementById('simulatorPanel').style.display = 'none';
     document.getElementById('fullscreenBtn').style.display = 'none';
     document.getElementById('exportCsvBtn').style.display = 'none';
     hideSkeleton();
@@ -635,10 +652,12 @@ async function loadCongressElection(election) {
       const user = await localFetch('/user', { id: c.user || c.userId }).catch(() => null);
       const partyId = c.party || c.partyId;
       const party = partyId ? await localFetch('/party', { id: partyId }).catch(() => null) : null;
+      const articleData = c.article ? await localFetch('/article', { id: c.article }).catch(() => null) : null;
       const safePartyId = partyId || 'independent';
       let votes = c.voteCount || 0;
       if (election.votes && election.votes[String(c.user || c.userId)]) votes = election.votes[String(c.user || c.userId)];
-      return { ...c, user, partyName: party?.name || 'Independent', partyColor: getPartyColor(safePartyId), votes };
+      const level = user?.level ?? user?.lvl ?? user?.leveling?.level ?? null;
+      return { ...c, user, partyName: party?.name || 'Independent', partyAvatarUrl: party?.avatarUrl || null, partyColor: getPartyColor(safePartyId), level, votes, articleData };
     });
     const candidates = await Promise.all(candidatePromises);
     candidates.sort((a,b) => b.votes - a.votes);
@@ -648,20 +667,26 @@ async function loadCongressElection(election) {
     const candidatesTotalVotes = candidates.reduce((s,c) => s + c.votes, 0);
     const maxVotes = candidates[0]?.votes || 1;
 
-    const html = candidates.map(c => {
+    const html = candidates.map((c, idx) => {
       const pct = candidatesTotalVotes ? ((c.votes / candidatesTotalVotes) * 100).toFixed(1) : 0;
       const barWidth = (c.votes / maxVotes) * 100;
+      const isLeading = idx === 0 && c.votes > 0;
+      const partyLogoHtml = c.partyAvatarUrl
+        ? `<img src="${c.partyAvatarUrl}" class="candidate-card-party-logo" alt="" onerror="this.style.display='none'">`
+        : '';
       return `
-        <div class="candidate-card">
+        <div class="candidate-card${isLeading ? ' candidate-card-leading' : ''}" style="background:${hexToRgba(c.partyColor, 0.14)}; border-color:${hexToRgba(c.partyColor, 0.35)};">
+          <div class="candidate-card-rank">#${idx + 1}</div>
           <img src="${c.user?.avatarUrl || ''}" class="candidate-card-avatar" onerror="this.src=''">
           <div class="candidate-card-info">
-            <div class="candidate-card-name">${escapeHtml(c.user?.username || 'Unknown')}</div>
-            <div class="candidate-card-party">${c.partyName}</div>
+            <div class="candidate-card-name">${escapeHtml(c.user?.username || 'Unknown')}${c.level != null ? ` <span class="candidate-card-level">⭐${c.level}</span>` : ''}</div>
+            <div class="candidate-card-party">${partyLogoHtml}<span>${escapeHtml(c.partyName)}</span></div>
             <div class="candidate-card-votes">
               🗳️ <span class="votes-count">${c.votes.toLocaleString()}</span> votes (${pct}%)
               <div style="height:4px; background:var(--s3); border-radius:2px; margin-top:4px;">
                 <div style="width:${barWidth}%; height:100%; background:${c.partyColor}; border-radius:2px;"></div>
               </div>
+              ${c.article ? `<div class="candidate-card-article">📰 <a href="${APP_BASE}/article/${c.article}" target="_blank" rel="noopener">${escapeHtml(c.articleData?.title || 'Read candidacy article')}</a></div>` : ''}
             </div>
           </div>
         </div>
@@ -679,6 +704,10 @@ async function loadCongressElection(election) {
 
     setStatus(`Voting in progress · ${t('votes_so_far', { n: totalVotes.toLocaleString() })}`, 'loading');
     document.getElementById('badgeCount').textContent = `Voting · ${candidates.length} candidates`;
+
+    /* ── LIVE SIMULATOR — proietta i seggi con i voti parziali già arrivati ── */
+    await renderLiveSimulator(election, candidates, totalVotes);
+
     endHeavyOperation();
     return;
   }
@@ -708,8 +737,9 @@ async function loadCongressElection(election) {
       const user = await localFetch('/user', { id: c.user || c.userId }).catch(() => null);
       const partyId = c.party || c.partyId;
       const party = partyId ? await localFetch('/party', { id: partyId }).catch(() => null) : null;
+      const articleData = c.article ? await localFetch('/article', { id: c.article }).catch(() => null) : null;
       const safePartyId = partyId || 'independent';
-      return { ...c, user, partyName: party?.name || 'Independent', partyColor: getPartyColor(safePartyId) };
+      return { ...c, user, partyName: party?.name || 'Independent', partyColor: getPartyColor(safePartyId), articleData };
     });
     const candidates = await Promise.all(candidatePromises);
     document.getElementById('candidatesCount').textContent = candidates.length;
@@ -721,6 +751,7 @@ async function loadCongressElection(election) {
           <div class="candidate-card-name">${escapeHtml(c.user?.username || 'Unknown')}</div>
           <div class="candidate-card-party">${c.partyName}</div>
           <div class="candidate-card-votes">📋 Registered as candidate</div>
+          ${c.article ? `<div class="candidate-card-article">📰 <a href="${APP_BASE}/article/${c.article}" target="_blank" rel="noopener">${escapeHtml(c.articleData?.title || 'Read candidacy article')}</a></div>` : ''}
         </div>
       </div>
     `).join('');
@@ -862,27 +893,109 @@ async function loadCongressElection(election) {
   document.getElementById('badgeCount').textContent = badge;
   window._lastElectedParties = electedParties;
   window._lastAllParties = allParties;
+  window._simIsLive = false;
+  window._lastElectedCount = election.electedCount;
   electedParties.forEach(p => _partyNamesMap.set(p.id, p.name));
 
   const inputEl = document.getElementById('simExpectedVotersInput');
   if (inputEl) inputEl.value = totalVotes || '';
-  renderSimulator(allParties, totalSeats);
+  renderSimulator(allParties, totalSeats, { electedCount: election.electedCount });
 
   const panel = document.getElementById('presGovernmentPanel');
   if (panel) panel.open = false;
 }
 
+/* ── LIVE SIMULATOR (voting in progress) ──
+   Aggrega i voti parziali per partito e proietta i seggi già durante lo
+   svolgimento del voto, prima che l'elezione si chiuda. */
+async function renderLiveSimulator(election, candidates, totalVotesSoFar) {
+  const panel = document.getElementById('simulatorPanel');
+  if (!panel) return;
+
+  // Voti live per partito, a partire dai candidati già caricati
+  const partyVotesLive = {};
+  candidates.forEach(c => {
+    const pid = String(c.party || c.partyId || 'independent');
+    partyVotesLive[pid] = (partyVotesLive[pid] || 0) + (c.votes || 0);
+  });
+
+  // Dettagli partiti (nome, membri) del paese corrente
+  let allPartiesData = [];
+  try { allPartiesData = await loadPartiesForCountry(election.country || _currentCountryId); } catch (_) {}
+  const allPartyDetailsMap = {};
+  allPartiesData.forEach(p => { allPartyDetailsMap[p._id] = p; });
+
+  // Seggi dell'elezione congressuale precedente, usati come riferimento "now" per il delta
+  const prevCongress = [..._electionHistory]
+    .filter(e => e.type === 'congress' && e._id !== election._id)
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
+  let prevSeatsMap = {}, prevVotesMap = {}, prevTotalSeats = 0;
+  if (prevCongress) {
+    try {
+      const prevData = await localFetch('/election', { id: prevCongress._id });
+      (prevData.candidates || []).filter(c => c.isElected).forEach(c => {
+        const pid = String(c.party || c.partyId || 'independent');
+        prevSeatsMap[pid] = (prevSeatsMap[pid] || 0) + 1;
+        prevTotalSeats++;
+      });
+      // Voti totali per partito nell'elezione congressuale precedente (tutti i
+      // candidati, non solo gli eletti) — usati come base della proiezione
+      // quando l'elezione in corso non ha ancora voti propri.
+      (prevData.candidates || []).forEach(c => {
+        const pid = String(c.party || c.partyId || 'independent');
+        let v = c.voteCount || 0;
+        if (prevData.votes && prevData.votes[String(c.user || c.userId)]) v = prevData.votes[String(c.user || c.userId)];
+        prevVotesMap[pid] = (prevVotesMap[pid] || 0) + v;
+      });
+    } catch (_) {}
+  }
+
+  // Se il voto in corso non ha ancora accumulato voti propri, usiamo come base
+  // della proiezione i voti dell'ultima elezione congressuale (% voti presi),
+  // invece di far ricadere il simulatore sulla % di membri del partito.
+  const totalLiveVotes = Object.values(partyVotesLive).reduce((a, b) => a + b, 0);
+  const usingPrevVotes = totalLiveVotes === 0 && Object.keys(prevVotesMap).length > 0;
+
+  // Costruisci l'elenco partiti nello stesso formato usato da renderSimulator()
+  const pidsWithVotes = new Set(Object.keys(partyVotesLive));
+  const allPids = new Set([...Object.keys(allPartyDetailsMap), ...pidsWithVotes, ...Object.keys(prevSeatsMap), ...Object.keys(prevVotesMap)]);
+
+  const liveParties = [...allPids].map(pid => {
+    const votes = partyVotesLive[pid] || (usingPrevVotes ? (prevVotesMap[pid] || 0) : 0);
+    if (pid === 'independent') {
+      return { id: pid, name: 'Independent', abbr: 'IND', seats: prevSeatsMap[pid] || 0, members: 0, votes, color: getPartyColor(pid) };
+    }
+    const pd = allPartyDetailsMap[pid] || {};
+    const name = pd.name || _partyNamesMap.get(pid) || `Party ${pid.slice(-6)}`;
+    const rawMembers = Array.isArray(pd.members) ? pd.members.length : Number(pd.membersCount || pd.memberCount || 0);
+    return { id: pid, name, abbr: makeAbbr(name), seats: prevSeatsMap[pid] || 0, members: rawMembers, votes, color: getPartyColor(pid) };
+  }).sort((a, b) => (b.votes || 0) - (a.votes || 0));
+
+  window._lastAllParties = liveParties;
+  window._simIsLive = true;
+  window._lastElectedCount = election.electedCount;
+
+  panel.style.display = '';
+  // Pre-compila il numero di votanti attesi con i voti già arrivati, così la
+  // proiezione compare subito, senza bisogno di un input manuale.
+  const inputEl = document.getElementById('simExpectedVotersInput');
+  if (inputEl && !inputEl.value) inputEl.value = totalVotesSoFar || '';
+
+  renderSimulator(liveParties, prevTotalSeats, { isLive: true, liveVotes: totalVotesSoFar, electedCount: election.electedCount, usingPrevVotes });
+}
+
 /* ── CONGRESS SIMULATOR ── */
-function renderSimulator(allParties, totalSeatsCurrent) {
+function renderSimulator(allParties, totalSeatsCurrent, opts = {}) {
   const panel = document.getElementById('simulatorPanel');
   if (!panel) return;
   panel.style.display = '';
 
   const population = _currentCountryData?.rankings?.countryActivePopulation?.value || null;
+  const electedCount = opts.electedCount || null;
   const MIN_SEATS  = 5;
   const MAX_SEATS  = 50;
 
-  // Seat count: manual override > population formula > current election seats (min 5)
+  // Seat count: manual override > election's official electedCount > population formula > current election seats (min 5)
   const seatsInputEl = document.getElementById('simSeatsInput');
   const seatsHintEl  = document.getElementById('simSeatsHint');
   const manualSeats  = seatsInputEl ? parseInt(seatsInputEl.value, 10) : NaN;
@@ -890,6 +1003,9 @@ function renderSimulator(allParties, totalSeatsCurrent) {
   if (!isNaN(manualSeats) && manualSeats >= MIN_SEATS) {
     totalSeats = Math.min(manualSeats, MAX_SEATS);
     seatsNote  = 'manual';
+  } else if (electedCount) {
+    totalSeats = Math.max(MIN_SEATS, Math.min(MAX_SEATS, electedCount));
+    seatsNote  = 'from electedCount';
   } else if (population) {
     totalSeats = Math.max(MIN_SEATS, Math.min(MAX_SEATS, Math.floor(population / 20) + 2));
     seatsNote  = `pop/20+2`;
@@ -940,9 +1056,19 @@ function renderSimulator(allParties, totalSeatsCurrent) {
 
   const projBasisEl = document.getElementById('simProjBasis');
   if (projBasisEl) {
-    projBasisEl.textContent = totalVotesAll > 0
-      ? t('using_total_votes', { n: totalVotesAll.toLocaleString() })
-      : 'using member share (no vote data)';
+    if (opts.isLive) {
+      if (opts.usingPrevVotes) {
+        projBasisEl.textContent = `📊 no votes yet this round · projecting from the previous congress election's vote share (${totalVotesAll.toLocaleString()} votes)`;
+      } else {
+        projBasisEl.textContent = totalVotesAll > 0
+          ? `🔴 LIVE · projecting from ${totalVotesAll.toLocaleString()} votes counted so far (voting still in progress)`
+          : '🔴 LIVE · waiting for the first votes to come in';
+      }
+    } else {
+      projBasisEl.textContent = totalVotesAll > 0
+        ? t('using_total_votes', { n: totalVotesAll.toLocaleString() })
+        : 'using member share (no vote data)';
+    }
   }
 
   // Distribute totalSeats proportionally by vote share (or member share as fallback)
@@ -969,7 +1095,8 @@ function renderSimulator(allParties, totalSeatsCurrent) {
   const simParties = allParties.map((p, i) => {
     const votePct  = totalVotesAll > 0 ? ((p.votes || 0) / totalVotesAll * 100) : null;
     const memberPct = totalMembers > 0 ? ((p.members || 0) / totalMembers * 100) : null;
-    const projVotes = hasVoters && votePct != null ? Math.round(expectedVoters * votePct / 100) : null;
+    const basisPct  = votePct != null ? votePct : memberPct;
+    const projVotes = hasVoters && basisPct != null ? Math.round(expectedVoters * basisPct / 100) : null;
     const proj      = projSeatsArr[i];
     const delta     = proj - (p.seats || 0);
     return { ...p, votePct, memberPct, projVotes, projSeats: proj, delta };
@@ -1028,13 +1155,20 @@ function renderSimulator(allParties, totalSeatsCurrent) {
     previewWrap.style.display = 'none';
   }
 
-  document.getElementById('simBadge').textContent = `${totalSeats} seats · ${simParties.filter(p => p.projSeats > 0).length} parties`;
+  const simBadgeEl = document.getElementById('simBadge');
+  if (simBadgeEl) {
+    simBadgeEl.textContent = opts.isLive
+      ? `🔴 LIVE projection · ${totalSeats} seats · ${simParties.filter(p => p.projSeats > 0).length} parties`
+      : `${totalSeats} seats · ${simParties.filter(p => p.projSeats > 0).length} parties`;
+  }
 }
 
 function onExpectedVotersChange() {
   if (window._lastAllParties) {
     const totalSeats = window._lastAllParties.reduce((s, p) => s + (p.seats || 0), 0);
-    renderSimulator(window._lastAllParties, totalSeats);
+    const opts = { electedCount: window._lastElectedCount };
+    if (window._simIsLive) opts.isLive = true;
+    renderSimulator(window._lastAllParties, totalSeats, opts);
   }
 }
 

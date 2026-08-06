@@ -30,6 +30,7 @@ const ENDPOINT_MAP = {
   '/election':   { proc: 'election.getElection',            params: p => ({ electionId: p.id }) },
   '/elections':  { proc: 'election.getElections',            params: p => ({ countryId: p.countryId }) },
   '/government': { proc: 'government.getByCountryId',       params: p => ({ countryId: p.countryId }) },
+  '/article':    { proc: 'article.getArticleLiteById',       params: p => ({ articleId: p.id }) },
 };
 
 /* NB: niente più routing verso gateway.warerastats.io (401 senza key
