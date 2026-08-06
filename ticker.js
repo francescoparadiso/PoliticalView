@@ -107,9 +107,7 @@ async function fetchAllElectionsOnce() {
       } else {
         let voterCount = 0;
         if (detail) {
-          if (detail.votes && typeof detail.votes === 'object') {
-            voterCount = Object.keys(detail.votes).length;
-          } else if (detail.votesCount) {
+          if (detail.votesCount) {
             voterCount = detail.votesCount;
           } else {
             voterCount = detail.candidates?.reduce((s, c) => s + (c.voteCount || 0), 0) || 0;

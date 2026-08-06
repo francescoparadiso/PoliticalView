@@ -644,11 +644,12 @@ async function loadCongressElection(election) {
     candidates.sort((a,b) => b.votes - a.votes);
     document.getElementById('candidatesCount').textContent = candidates.length;
 
-    const totalVotes = candidates.reduce((s,c) => s + c.votes, 0);
+    const totalVotes = election.votesCount || 0;
+    const candidatesTotalVotes = candidates.reduce((s,c) => s + c.votes, 0);
     const maxVotes = candidates[0]?.votes || 1;
 
     const html = candidates.map(c => {
-      const pct = totalVotes ? ((c.votes / totalVotes) * 100).toFixed(1) : 0;
+      const pct = candidatesTotalVotes ? ((c.votes / candidatesTotalVotes) * 100).toFixed(1) : 0;
       const barWidth = (c.votes / maxVotes) * 100;
       return `
         <div class="candidate-card">

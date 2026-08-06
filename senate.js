@@ -655,6 +655,11 @@ const SenateView = (() => {
     countryBox.id = 'senateCountryBox';
     countryBox.className = 'senate-country-box';
     stage.appendChild(countryBox);
+
+    const govBox = document.createElement('div');
+    govBox.id = 'senateGovBox';
+    govBox.className = 'senate-gov-box';
+    stage.appendChild(govBox);
   }
 
   // ── BOX NAZIONE (alto sx): bandiera + nome grandi, voti totali e seggi
@@ -709,31 +714,51 @@ const SenateView = (() => {
     if (!gov || !gov.presidentData) return '';
 
     const president = gov.presidentData;
-    const leftRoles = [
-      ['minOfDefenseData', t('senate_role_defense')],
-      ['vicePresidentData', t('senate_role_vp')],
-    ];
-    const rightRoles = [
-      ['minOfEconomyData', t('senate_role_economy')],
+
+    // All roles in display order: president first, then all others
+    const allRoles = [
+      ['vicePresidentData',       t('senate_role_vp')],
+      ['minOfDefenseData',        t('senate_role_defense')],
+      ['minOfEconomyData',        t('senate_role_economy')],
       ['minOfForeignAffairsData', t('senate_role_foreign')],
     ];
 
-    const sideHtml = (roles) => roles.map(([key, label]) => {
+    // Additional roles that may exist in the gov object but aren't named above
+    const knownKeys = new Set(['presidentData', 'vicePresidentData', 'minOfDefenseData', 'minOfEconomyData', 'minOfForeignAffairsData']);
+    Object.keys(gov).forEach(k => {
+      if (!knownKeys.has(k) && gov[k] && gov[k].username) {
+        // Humanise the key: e.g. "minOfJusticeData" → "Min. of Justice"
+        const label = k.replace(/Data$/, '').replace(/([A-Z])/g, ' $1').replace(/^min of /i, 'Min. of ').trim();
+        allRoles.push([k, label]);
+      }
+    });
+
+    const memberHtml = (key, label, isBig = false) => {
       const user = gov[key];
       if (!user) return '';
-      return `<div class="scb-gov-person" title="${escapeHtml(label)}: ${escapeHtml(user.username || '')}">
-        ${_govAvatar(user)}
-      </div>`;
-    }).join('');
+      const sizeClass = isBig ? 'scb-gov-avatar scb-gov-avatar-president' : 'scb-gov-avatar';
+      const avatarHtml = user.avatarUrl
+        ? `<img src="${user.avatarUrl}" class="${sizeClass}" alt="" loading="lazy">`
+        : `<div class="${sizeClass} scb-gov-avatar-fallback">👤</div>`;
+      return `
+        <div class="scb-gov-member${isBig ? ' scb-gov-member-president' : ''}">
+          ${avatarHtml}
+          <div class="scb-gov-member-info">
+            <div class="scb-gov-member-name">${escapeHtml(user.username || '—')}</div>
+            <div class="scb-gov-member-role">${escapeHtml(label)}</div>
+          </div>
+        </div>`;
+    };
 
     return `
-      <div class="scb-gov-row">
-        <div class="scb-gov-side">${sideHtml(leftRoles)}</div>
-        <div class="scb-gov-person scb-gov-president" title="${escapeHtml(t('senate_role_president'))}: ${escapeHtml(president.username || '')}">
-          ${_govAvatar(president, { big: true })}
-          <div class="scb-gov-president-name">${escapeHtml(president.username || '—')}</div>
+      <div class="scb-gov-box">
+        <div class="scb-gov-title">⚖️ ${t('senate_government_label') || 'Government'}</div>
+        <div class="scb-gov-president-row">
+          ${memberHtml('presidentData', t('senate_role_president') || 'President', true)}
         </div>
-        <div class="scb-gov-side">${sideHtml(rightRoles)}</div>
+        <div class="scb-gov-members-grid">
+          ${allRoles.map(([key, label]) => memberHtml(key, label)).join('')}
+        </div>
       </div>
     `;
   }
@@ -771,7 +796,6 @@ const SenateView = (() => {
     if (rulingPartyName) extraStats.push([escapeHtml(rulingPartyName), t('senate_ruling_party_label')]);
 
     box.innerHTML = `
-      ${_renderGovernmentRow()}
       <div class="scb-top">
         ${_flagMarkup(_currentCountryData)}
         <div class="scb-name">${escapeHtml(countryName)}</div>
@@ -785,6 +809,16 @@ const SenateView = (() => {
         ${extraStats.map(([val, label]) => `<div class="scb-stat"><span class="scb-stat-val">${val}</span><span class="scb-stat-label">${label}</span></div>`).join('')}
       </div>` : ''}
     `;
+
+    // Government box: separate element, centered on the arc area (not the full window)
+    let govBox = document.getElementById('senateGovBox');
+    if (!govBox) {
+      govBox = document.createElement('div');
+      govBox.id = 'senateGovBox';
+      govBox.className = 'senate-gov-box';
+      document.querySelector('.senate-stage')?.appendChild(govBox);
+    }
+    govBox.innerHTML = _renderGovernmentRow();
   }
 
   // ── RIGHT SIDEBAR: every party, every member, every vote count — all
@@ -938,28 +972,113 @@ const SenateView = (() => {
         background: rgba(197,150,74,.15); color:#e8c97a; font-weight:700; font-size:.72rem;
         box-shadow:0 0 0 1px rgba(255,255,255,.1);
       }
-      .scb-gov-row {
-        display:flex; align-items:flex-end; justify-content:center; gap:8px;
-        padding-bottom:10px; border-bottom:1px solid rgba(197,150,74,.15);
+      /* ── GOVERNMENT BOX: centrata sull'area emiciclo (non sull'intera finestra) ── */
+      .senate-gov-box {
+        position: absolute;
+        /* Centrata orizzontalmente sull'area emiciclo: metà di (100% - SIDEBAR_W) */
+        left: 0;
+        right: ${SIDEBAR_W}px;
+        bottom: ${BOTTOMBAR_H + 10}px;
+        display: flex;
+        justify-content: center;
+        pointer-events: none;
+        z-index: 36;
       }
-      .scb-gov-side { display:flex; align-items:center; gap:6px; }
-      .scb-gov-person { display:flex; flex-direction:column; align-items:center; gap:3px; }
+      .scb-gov-box {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 12px 16px;
+        background: linear-gradient(160deg, rgba(20,16,12,.9), rgba(10,8,6,.85));
+        border: 1px solid rgba(197,150,74,.22);
+        border-radius: 12px;
+        backdrop-filter: blur(8px);
+        font-family: "Sora", sans-serif;
+        pointer-events: auto;
+        max-width: 480px;
+        min-width: 220px;
+      }
+      .scb-gov-title {
+        font-size: .65rem;
+        font-weight: 700;
+        color: #e8c97a;
+        text-transform: uppercase;
+        letter-spacing: .07em;
+        margin-bottom: 2px;
+      }
+      .scb-gov-president-row {
+        display: flex;
+        justify-content: center;
+        padding-bottom: 8px;
+        border-bottom: 1px solid rgba(197,150,74,.15);
+      }
+      .scb-gov-members-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 10px;
+        justify-content: center;
+      }
+      .scb-gov-member {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 4px 8px;
+        border-radius: 8px;
+        background: rgba(255,255,255,.03);
+        min-width: 0;
+      }
+      .scb-gov-member-president {
+        padding: 6px 14px;
+        background: rgba(232,201,122,.07);
+        border: 1px solid rgba(232,201,122,.18);
+      }
+      .scb-gov-member-info {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      .scb-gov-member-name {
+        font-size: .74rem;
+        font-weight: 700;
+        color: #f2e6c8;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 110px;
+      }
+      .scb-gov-member-president .scb-gov-member-name {
+        font-size: .82rem;
+        max-width: 140px;
+      }
+      .scb-gov-member-role {
+        font-size: .6rem;
+        color: #8892a4;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        white-space: nowrap;
+      }
+      .scb-gov-member-president .scb-gov-member-role {
+        color: #e8c97a;
+      }
       .scb-gov-avatar {
-        width:26px; height:26px; border-radius:50%; object-fit:cover;
-        box-shadow:0 0 0 1px rgba(255,255,255,.15);
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        object-fit: cover;
+        flex: 0 0 auto;
+        box-shadow: 0 0 0 1px rgba(255,255,255,.15);
       }
       .scb-gov-avatar-fallback {
-        display:flex; align-items:center; justify-content:center;
-        background: rgba(197,150,74,.15); font-size:.8rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(197,150,74,.15);
+        font-size: .8rem;
       }
-      .scb-gov-president { margin:0 4px; }
       .scb-gov-avatar-president {
-        width:52px; height:52px;
-        box-shadow: 0 0 0 2px #e8c97a, 0 0 14px -2px rgba(232,201,122,.8);
-      }
-      .scb-gov-president-name {
-        font-size:.68rem; font-weight:700; color:#f2e6c8; max-width:78px;
-        white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+        width: 44px;
+        height: 44px;
+        box-shadow: 0 0 0 2px #e8c97a, 0 0 14px -2px rgba(232,201,122,.7);
       }
       .scb-name { font-size:1.05rem; font-weight:700; color:#f2e6c8; line-height:1.15; }
       .scb-stats { display:flex; flex-wrap:wrap; gap:14px 18px; }
@@ -972,6 +1091,7 @@ const SenateView = (() => {
       @media (max-width: 1000px) {
         .senate-party-sidebar { width:0; padding:0; border:none; overflow:hidden; }
         .senate-country-box { display:none; }
+        .senate-gov-box { display:none; }
         .senate-stats-bar { right:0; }
         /* Su mobile la vista ad arco è disattivata (card troppo piccole per
            essere leggibili): il toggle non ha più senso, si resta sempre
